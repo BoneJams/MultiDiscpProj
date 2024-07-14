@@ -9,6 +9,8 @@
 	let room_id = $state("")
 	let players = $state<player[]>([])
 	let seekers = $state<{ name: string; coords: GeolocationCoordinates }[]>([])
+	let coins = $state(0)
+	let radars = $state<{ meters: number; inside: boolean }[]>([])
 
 	let create_name = $state("")
 	let create_room_password = $state("")
@@ -46,6 +48,26 @@
 		const seeker = seekers.find((seeker) => seeker.name === name)
 		if (seeker) seeker.coords = coords
 		else seekers.push({ name, coords })
+	})
+
+	socket.on("radar", (meters, inside) => {
+		if (inside === undefined) {
+			navigator.geolocation.getCurrentPosition(
+				(postion) => {
+					socket.emit("radar", meters, postion.coords)
+				},
+				(e) => {
+					console.log(e)
+				},
+				{ enableHighAccuracy: true, maximumAge: 0, timeout: 10000 }
+			)
+		} else {
+			radars.push({ meters, inside })
+		}
+	})
+
+	socket.on("coins", (new_coins) => {
+		coins = new_coins
 	})
 
 	$effect(() => {
@@ -213,7 +235,7 @@
 
 		<hr class="w-80" />
 
-		<div class="text-2xl">Seeker</div>
+		<div class="text-2xl">Hider</div>
 
 		<div class="flex flex-row items-center justify-center gap-4">
 			<div class="text">Currency:</div>
@@ -229,25 +251,43 @@
 
 		<div class="text-xl">Radar</div>
 		<div class="grid grid-cols-5 items-center justify-center gap-4">
-			<div class="btn btn-primary">5m</div>
-			<div class="btn btn-primary">10m</div>
-			<div class="btn btn-primary">25m</div>
-			<div class="btn btn-primary">50m</div>
-			<div class="btn btn-primary">100m</div>
-			<div class="btn btn-primary">200m</div>
-			<div class="btn btn-primary">500m</div>
-			<div class="btn btn-primary">1km</div>
-			<div class="btn btn-primary">2km</div>
-			<div class="btn btn-primary">5km</div>
+			{#each [5, 10, 25, 50, 100, 200, 500, 1000, 2000, 5000] as meters}
+				<button
+					class="btn btn-primary"
+					onclick={() => {
+						navigator.geolocation.getCurrentPosition(
+							(postion) => {
+								socket.emit("radar", meters, postion.coords)
+							},
+							(e) => {
+								console.log(e)
+							},
+							{ enableHighAccuracy: true, maximumAge: 0, timeout: 10000 }
+						)
+					}}>{meters >= 1000 ? `${meters / 1000}km` : `${meters}m`}</button
+				>
+			{/each}
 		</div>
+
+		{#each radars as radar}
+			<div class="text-xl">
+				You used a {radar.meters >= 1000 ? `${radar.meters / 1000}km` : `${radar.meters}m`} radar on
+				the hiders (they are {radar.inside ? "INSIDE" : "OUTSIDE"} the radius)
+			</div>
+		{/each}
 
 		<!-- * HIDER -->
 	{:else if $page.state.page === "hider"}
 		{@render leave_game_button()}
 
 		<div class="text-3xl">Hider</div>
-		<div>Currency:[COINS]</div>
-		<div>Seeker used a distance radar on you (you are [INSIDE/OUTSIDE] the radius)</div>
+		<div>You have {coins} coins</div>
+		{#each radars as radar}
+			<div class="text-xl">
+				Seeker used a {radar.meters >= 1000 ? `${radar.meters / 1000}km` : `${radar.meters}m`} radar
+				on you (you are {radar.inside ? "INSIDE" : "OUTSIDE"} the radius)
+			</div>
+		{/each}
 
 		<div style="width:100%;height:500px;">
 			<Map

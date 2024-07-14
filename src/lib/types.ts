@@ -3,6 +3,7 @@ export interface client_server {
 	"join"(room_id: string, player_name: string, password: string, admin: boolean): void
 	"role"(name: string, role: "admin" | "seeker" | "hider"): void
 	"gps"(coords: GeolocationCoordinates): void
+	"radar"(meters: number, coords: GeolocationCoordinates): void
 }
 
 export interface server_client {
@@ -11,6 +12,8 @@ export interface server_client {
 	"role"(role: "admin" | "seeker" | "hider"): void
 	"players"(players: player[]): void
 	"gps"(name: string, coords: GeolocationCoordinates): void
+	"coins"(coins: number): void
+	"radar"(meters: number, inside?: boolean): void
 
 	"error"(error: string): void
 }
