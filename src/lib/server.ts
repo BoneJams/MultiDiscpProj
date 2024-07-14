@@ -21,6 +21,7 @@ export default function (server: http.Server | Http2SecureServer) {
 				players: [{ name, role: "admin" }],
 				coins: 0
 			})
+
 			socket.emit("create", id)
 
 			sockets[id] = {}
@@ -51,6 +52,8 @@ export default function (server: http.Server | Http2SecureServer) {
 
 				socket.emit("players", room.players)
 
+				socket.emit("join", room_id)
+
 				switch (candidate_player.role) {
 					case "admin":
 						socket.emit("role", "admin")
@@ -64,14 +67,12 @@ export default function (server: http.Server | Http2SecureServer) {
 						socket.emit("role", "hider")
 						socket.join(`${room.id}-hider`)
 						break
-					default:
-						socket.emit("join", room_id)
-						break
 				}
 			} else {
+				socket.emit("join", room_id)
+
 				room.players.push({ role: admin ? "admin" : undefined, name })
 				io.to(room_id).emit("players", room.players)
-				socket.emit("join", room_id)
 			}
 
 			if (admin) socket.emit("role", "admin")
