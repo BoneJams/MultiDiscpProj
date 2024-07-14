@@ -10,15 +10,15 @@ export default {
 					primary: "#41A8DA",
 					secondary: "#FBAC55"
 				}
+			},
+			{
+				dark: {
+					...require("daisyui/src/theming/themes")["dark"], // eslint-disable-line @typescript-eslint/no-require-imports
+					primary: "#41A8DA",
+					secondary: "#FBAC55",
+					"base-content": "#FFFFFF"
+				}
 			}
-			// {
-			// 	dark: {
-			// 		...require("daisyui/src/theming/themes")["dark"], // eslint-disable-line @typescript-eslint/no-require-imports
-			// 		primary: "#41A8DA",
-			// 		secondary: "#FBAC55",
-			// 		"base-content": "#FFFFFF"
-			// 	}
-			// },
 			// {
 			// 	black: {
 			// 		...require("daisyui/src/theming/themes")["dark"], // eslint-disable-line @typescript-eslint/no-require-imports
