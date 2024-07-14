@@ -1,6 +1,6 @@
 import type http from "http"
 import type { Http2SecureServer } from "http2"
-import { Server } from "socket.io"
+import { Server, Socket } from "socket.io"
 import type { client_server, data, player, server_client } from "./types"
 
 export default function (server: http.Server | Http2SecureServer) {
@@ -16,6 +16,8 @@ export default function (server: http.Server | Http2SecureServer) {
 
 			rooms.push({ id, room_password, admin_password, players: [{ name, role: "admin" }] })
 			socket.emit("create", id)
+
+			sockets[id] = {}
 		})
 
 		socket.on("join", (room_id, name, password, admin) => {
@@ -68,7 +70,8 @@ export default function (server: http.Server | Http2SecureServer) {
 			if (admin) socket.emit("role", "admin")
 			socket.data.name = name
 			socket.join(room_id)
-			socket.join(`${room_id}-${name}`)
+
+			sockets[room_id][name] = socket
 		})
 
 		socket.on("role", (name, role) => {
@@ -77,11 +80,13 @@ export default function (server: http.Server | Http2SecureServer) {
 			const candidate_player = room.players.find((player) => player.name === name)
 			if (!candidate_player) return
 
+			sockets[room.id]?.[name]?.leave(`${room.id}-${candidate_player.role}`)
+			sockets[room.id]?.[name]?.join(`${room.id}-${role}`)
+			sockets[room.id]?.[name]?.emit("role", role)
+
 			candidate_player.role = role
 
-			io.to(`${room.id}-${name}`).emit("role", role)
-
-			io.to(candidate_player.role).emit("players", room.players)
+			io.to(room.id).emit("players", room.players)
 		})
 
 		socket.on("gps", (coords) => {
@@ -105,3 +110,8 @@ type Room = {
 function random<T>(arr: T[]): T {
 	return arr[Math.floor(arr.length * Math.random())]
 }
+
+const sockets: Record<
+	string,
+	Record<string, Socket<client_server, server_client, Record<string, never>, data>>
+> = {}
