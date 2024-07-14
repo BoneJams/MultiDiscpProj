@@ -1,10 +1,10 @@
 import type http from "http"
 import type { Http2SecureServer } from "http2"
 import { Server } from "socket.io"
-import type { client_server, player, server_client } from "./types"
+import type { client_server, data, player, server_client } from "./types"
 
 export default function (server: http.Server | Http2SecureServer) {
-	const io = new Server<client_server, server_client, Record<string, never>>(server)
+	const io = new Server<client_server, server_client, Record<string, never>, data>(server)
 
 	const room_ids = Array.from({ length: 899 }, (_, i) => (i + 100).toString())
 	const rooms: Room[] = []
@@ -18,8 +18,8 @@ export default function (server: http.Server | Http2SecureServer) {
 			socket.emit("create", id)
 		})
 
-		socket.on("join", (id, name, password, admin) => {
-			const candidate_room = rooms.find((room) => room.id === id)
+		socket.on("join", (room_id, name, password, admin) => {
+			const candidate_room = rooms.find((room) => room.id === room_id)
 			if (!candidate_room) {
 				socket.emit("error", "Room not found")
 				return
@@ -46,22 +46,51 @@ export default function (server: http.Server | Http2SecureServer) {
 				switch (candidate_player.role) {
 					case "admin":
 						socket.emit("role", "admin")
+						socket.join(`${room.id}-admin`)
 						break
 					case "seeker":
 						socket.emit("role", "seeker")
+						socket.join(`${room.id}-seeker`)
 						break
 					case "hider":
 						socket.emit("role", "hider")
+						socket.join(`${room.id}-hider`)
 						break
+					default:
+						socket.emit("join", room_id)
 				}
 			} else {
 				room.players.push({ role: admin ? "admin" : undefined, name })
-				io.to(id).emit("players", room.players)
+				io.to(room_id).emit("players", room.players)
 			}
 
-			socket.join(id)
-			socket.emit("join", id)
+			socket.emit("join", room_id)
 			if (admin) socket.emit("role", "admin")
+			socket.data.name = name
+			socket.join(room_id)
+			socket.join(`${room_id}-${name}`)
+		})
+
+		socket.on("role", (name, role) => {
+			if (!room) return
+
+			const candidate_player = room.players.find((player) => player.name === name)
+			if (!candidate_player) return
+
+			candidate_player.role = role
+
+			io.to(`${room.id}-${name}`).emit("role", role)
+
+			io.to(candidate_player.role).emit("players", room.players)
+		})
+
+		socket.on("gps", (coords) => {
+			if (!room) return
+
+			const candidate_player = room?.players.find((player) => player.name === socket.data.name)
+			if (!candidate_player || candidate_player.role !== "seeker") return
+
+			io.to(`${room.id}-hider`).emit("gps", socket.data.name, coords)
 		})
 	})
 }

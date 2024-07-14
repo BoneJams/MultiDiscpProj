@@ -3,10 +3,12 @@
 	import { page } from "$app/stores"
 	import { socket } from "$lib/const"
 	import type { player } from "$lib/types"
+	import { Map, Marker, TileLayer } from "sveaflet"
 	import { untrack } from "svelte"
 
 	let room_id = $state("")
 	let players = $state<player[]>([])
+	let seekers = $state<{ name: string; coords: GeolocationCoordinates }[]>([])
 
 	let create_name = $state("")
 	let create_room_password = $state("")
@@ -40,6 +42,12 @@
 		players = _players
 	})
 
+	socket.on("gps", (name, coords) => {
+		const seeker = seekers.find((seeker) => seeker.name === name)
+		if (seeker) seeker.coords = coords
+		else seekers.push({ name, coords })
+	})
+
 	$effect(() => {
 		untrack(() => {
 			room_id = sessionStorage.getItem("room_id") ?? ""
@@ -53,11 +61,21 @@
 			join_admin = sessionStorage.getItem("join_admin") === "true"
 			join_password = sessionStorage.getItem("join_password") ?? ""
 
-			if (join_id && join_name && join_password && join_admin)
+			if (join_id && join_name && join_password)
 				socket.emit("join", join_id, join_name, join_password, join_admin)
 
 			if (room_id && create_name && create_room_password && create_admin_password)
 				socket.emit("join", room_id, create_name, create_admin_password, true)
+
+			navigator.geolocation.watchPosition(
+				(position) => {
+					socket.emit("gps", position.coords)
+				},
+				(e) => {
+					console.log(e)
+				},
+				{ enableHighAccuracy: true, maximumAge: 0, timeout: 10000 }
+			)
 		})
 	})
 
@@ -155,6 +173,27 @@
 
 		<div class="text-3xl">Admin Panel</div>
 
+		<div class="grid grid-cols-2 gap-1">
+			<div>Player</div>
+			<div>Role</div>
+			{#each players as player}
+				<div>{player.name}</div>
+				<select
+					class="select select-primary select-sm"
+					bind:value={player.role}
+					onchange={() => {
+						if (!player.role) return
+						socket.emit("role", player.name, player.role)
+					}}
+				>
+					<option value={undefined}>Select Role...</option>
+					<option value="admin">Admin</option>
+					<option value="seeker">Seeker</option>
+					<option value="hider">Hider</option>
+				</select>
+			{/each}
+		</div>
+
 		<div class="text-2xl">Seeker</div>
 
 		<div class="text-xl">Radar</div>
@@ -209,6 +248,20 @@
 		<div class="text-3xl">Hider</div>
 		<div>Currency:[COINS]</div>
 		<div>Seeker used a distance radar on you (you are [INSIDE/OUTSIDE] the radius)</div>
+
+		<div style="width:100%;height:500px;">
+			<Map
+				options={{
+					center: [51.505, -0.09],
+					zoom: 13
+				}}
+			>
+				<TileLayer url={"https://tile.openstreetmap.org/{z}/{x}/{y}.png"} />
+				{#each seekers as seeker}
+					<Marker latlng={[seeker.coords.latitude, seeker.coords.longitude]} />
+				{/each}
+			</Map>
+		</div>
 	{/if}
 </div>
 
