@@ -298,7 +298,7 @@
 			>
 				<TileLayer url={"https://tile.openstreetmap.org/{z}/{x}/{y}.png"} />
 				{#each seekers as seeker}
-					<Marker latlng={[seeker.coords.latitude, seeker.coords.longitude]} />
+					<Marker latLng={[seeker.coords.latitude, seeker.coords.longitude]} />
 				{/each}
 			</Map>
 		</div>
