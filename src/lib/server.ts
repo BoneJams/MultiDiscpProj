@@ -1,6 +1,14 @@
 import type http from "http"
 import type { Http2SecureServer } from "http2"
 import { Server, Socket } from "socket.io"
+import {
+	category_coins,
+	dice_coins,
+	radar_meters,
+	radars,
+	task_categories,
+	type dice_curses
+} from "./const"
 import type { client_server, data, player, server_client } from "./types"
 
 export default function (server: http.Server | Http2SecureServer) {
@@ -19,7 +27,9 @@ export default function (server: http.Server | Http2SecureServer) {
 				room_password,
 				admin_password,
 				players: [{ name, role: "admin" }],
-				coins: 0
+				coins: 0,
+				curses: [],
+				tasks: []
 			})
 
 			socket.emit("create", id)
@@ -50,35 +60,28 @@ export default function (server: http.Server | Http2SecureServer) {
 				if (candidate_player.role !== "admin" && admin)
 					return socket.emit("error", "You are not an admin.")
 
-				socket.emit("players", room.players)
-
-				socket.emit("join", room_id)
-
 				switch (candidate_player.role) {
 					case "admin":
-						socket.emit("role", "admin")
 						socket.join(`${room.id}-admin`)
 						break
 					case "seeker":
-						socket.emit("role", "seeker")
 						socket.join(`${room.id}-seeker`)
 						break
 					case "hider":
-						socket.emit("role", "hider")
 						socket.join(`${room.id}-hider`)
 						break
 				}
 			} else {
-				socket.emit("join", room_id)
-
 				room.players.push({ role: admin ? "admin" : undefined, name })
-				io.to(room_id).emit("players", room.players)
 			}
 
-			if (admin) socket.emit("role", "admin")
-
-			socket.data.name = name
+			socket.emit("join", room_id)
 			socket.join(room_id)
+			socket.data.name = name
+
+			io.to(room_id).emit("players", room.players)
+
+			socket.emit("coins", room.coins)
 
 			sockets[room_id][name] = socket
 		})
@@ -91,7 +94,6 @@ export default function (server: http.Server | Http2SecureServer) {
 
 			sockets[room.id]?.[name]?.leave(`${room.id}-${candidate_player.role}`)
 			sockets[room.id]?.[name]?.join(`${room.id}-${role}`)
-			sockets[room.id]?.[name]?.emit("role", role)
 
 			candidate_player.role = role
 
@@ -102,35 +104,108 @@ export default function (server: http.Server | Http2SecureServer) {
 			if (!room) return
 
 			const candidate_player = room?.players.find((player) => player.name === socket.data.name)
-			if (!candidate_player || candidate_player.role !== "seeker") return
 
-			io.to(`${room.id}-hider`).emit("gps", socket.data.name, coords)
-		})
-
-		socket.on("radar", (meters, coords) => {
-			if (!room) return
-
-			const candidate_player = room?.players.find((player) => player.name === socket.data.name)
 			if (!candidate_player) return
 
-			if (candidate_player.role === "seeker") {
-				io.to(`${room.id}-hider`).emit("radar", meters)
-				room.seeker_coords = coords
+			switch (candidate_player.role) {
+				case "seeker":
+					room.seeker_coords = coords
+					io.to(`${room.id}-hider`).emit("gps", socket.data.name, coords)
+					break
+				case "hider":
+					room.hider_coords = coords
+					break
+			}
+		})
+
+		socket.on("task", (task, state) => {
+			if (!room) return
+
+			if (state === "requested" && room.curses.some((curse) => curse.state !== "confirmed")) {
+				return socket.emit(
+					"error",
+					"You need to complete all your curses first before you can send tasks"
+				)
 			}
 
-			if (candidate_player.role === "hider") {
-				room.hider_coords = coords
+			if (state === "requested" && room.tasks.some((task) => task.state !== "confirmed")) {
+				return socket.emit("error", "You can only send one task at a time")
+			}
 
-				if (!room.seeker_coords) return
+			if (radars.includes(task as (typeof radars)[number])) {
+				if (!room.hider_coords || !room.seeker_coords)
+					return socket.emit("error", "Hider or Seeker not found")
 
-				const distance = measure(coords, room.seeker_coords)
+				const distance = measure(room.hider_coords, room.seeker_coords)
 
-				io.to(room.id).emit("radar", meters, distance < meters)
-
-				room.coins += 40
-
+				io.to(room.id).emit(
+					"radar",
+					radar_meters[task as (typeof radars)[number]],
+					distance < radar_meters[task as (typeof radars)[number]]
+				)
+				io.to(room.id).emit("task", task, "confirmed")
+				room.coins += category_coins[task_categories[task]]
 				io.to(room.id).emit("coins", room.coins)
+				socket.emit("coins", room.coins)
+				room.tasks.push({ task, state: "confirmed" })
+			} else {
+				io.to(room.id).emit("task", task, state)
+				if (state !== "requested") room.tasks.pop()
+				room.tasks.push({ task, state })
+				if (state === "confirmed") {
+					room.coins += category_coins[task_categories[task]]
+					io.to(room.id).emit("coins", room.coins)
+				}
 			}
+		})
+
+		socket.on("dice", (number_of_dices_str) => {
+			if (!room) return
+
+			const number_of_dices = parseInt(number_of_dices_str)
+			if (isNaN(number_of_dices) || number_of_dices <= 0)
+				return socket.emit("error", "Invalid number of dices")
+
+			if (number_of_dices * dice_coins > room.coins) {
+				return socket.emit(
+					"error",
+					`You do not have enough coins to roll that many dices. The maximum dices you can roll is ${Math.floor(room.coins / dice_coins)}`
+				)
+			}
+
+			if (room.tasks.some((task) => task.state !== "confirmed")) {
+				return socket.emit(
+					"error",
+					"You need to complete all your tasks first before you can send curses"
+				)
+			}
+
+			if (room.curses.some((curse) => curse.state !== "confirmed")) {
+				return socket.emit("error", "You can only send one curse at a time")
+			}
+
+			let raw = 0
+			for (let i = 0; i < number_of_dices; i++) {
+				raw += Math.floor(Math.random() * 6) + 1
+			}
+			const curse = raw > 24 ? 24 : (raw as keyof typeof dice_curses)
+			io.to(room.id).emit("curse", curse, raw, "requested")
+			room.coins -= number_of_dices * dice_coins
+			io.to(room.id).emit("coins", room.coins)
+			room.curses.push({ curse, raw, state: "requested" })
+		})
+
+		socket.on("curse", (curse, raw, state) => {
+			if (!room) return
+			io.to(room.id).emit("curse", curse, raw, state)
+			if (state !== "requested") room.curses.pop()
+			room.curses.push({ curse, raw, state })
+		})
+
+		socket.on("coins", (coins) => {
+			if (!room) return
+			room.coins = coins
+			io.to(room.id).emit("coins", coins)
 		})
 	})
 }
@@ -143,6 +218,15 @@ type Room = {
 	coins: number
 	seeker_coords?: GeolocationCoordinates
 	hider_coords?: GeolocationCoordinates
+	curses: {
+		curse: keyof typeof dice_curses
+		raw: number
+		state: "requested" | "completed" | "confirmed"
+	}[]
+	tasks: {
+		task: keyof typeof task_categories
+		state: "requested" | "completed" | "confirmed"
+	}[]
 }
 
 function random<T>(arr: T[]): T {

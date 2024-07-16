@@ -1,20 +1,34 @@
+import type { dice_curses, task_categories } from "./const"
+
 export interface client_server {
 	"create"(player_name: string, room_password: string, admin_password: string): void
 	"join"(room_id: string, player_name: string, password: string, admin: boolean): void
 	"role"(name: string, role: "admin" | "seeker" | "hider"): void
+	"task"(task: keyof typeof task_categories, state: "requested" | "completed" | "confirmed"): void
+	"dice"(number_of_dices: string): void
+	"curse"(
+		curse: keyof typeof dice_curses,
+		raw: number,
+		state: "requested" | "completed" | "confirmed"
+	): void
 	"gps"(coords: GeolocationCoordinates): void
-	"radar"(meters: number, coords: GeolocationCoordinates): void
+
+	"coins"(coins: number): void
 }
 
 export interface server_client {
 	"create"(room_id: string): void
 	"join"(room_id: string): void
-	"role"(role: "admin" | "seeker" | "hider"): void
 	"players"(players: player[]): void
-	"gps"(name: string, coords: GeolocationCoordinates): void
 	"coins"(coins: number): void
-	"radar"(meters: number, inside?: boolean): void
-
+	"task"(task: keyof typeof task_categories, state: "requested" | "completed" | "confirmed"): void
+	"radar"(meters: number, inside: boolean): void
+	"curse"(
+		curse: keyof typeof dice_curses,
+		raw: number,
+		state: "requested" | "completed" | "confirmed"
+	): void
+	"gps"(name: string, coords: GeolocationCoordinates): void
 	"error"(error: string): void
 }
 

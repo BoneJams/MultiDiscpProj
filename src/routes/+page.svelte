@@ -1,16 +1,44 @@
 <script lang="ts">
 	import { pushState } from "$app/navigation"
 	import { page } from "$app/stores"
-	import { socket } from "$lib/const"
-	import type { player } from "$lib/types"
+	import { curse_names, dice_curses, task_categories, task_names } from "$lib/const"
+	import type { client_server, player, server_client } from "$lib/types"
+	import { io, type Socket } from "socket.io-client"
 	import { Map, Marker, TileLayer } from "sveaflet"
 	import { untrack } from "svelte"
+
+	const radars: (keyof typeof task_categories)[] = [
+		"radar5",
+		"radar10",
+		"radar25",
+		"radar50",
+		"radar100",
+		"radar200",
+		"radar500",
+		"radar1000",
+		"radar2000",
+		"radar5000"
+	]
+
+	let number_of_dices_str = $state("")
+
+	const socket: Socket<server_client, client_server> = io()
 
 	let room_id = $state("")
 	let players = $state<player[]>([])
 	let seekers = $state<{ name: string; coords: GeolocationCoordinates }[]>([])
 	let coins = $state(0)
-	let radars = $state<{ meters: number; inside: boolean }[]>([])
+	let radar_history = $state<{ meters: number; inside: boolean }[]>([])
+	let task_history = $state<
+		{ task: keyof typeof task_categories; state: "requested" | "completed" | "confirmed" }[]
+	>([])
+	let curse_history = $state<
+		{
+			curse: keyof typeof dice_curses
+			raw: number
+			state: "requested" | "completed" | "confirmed"
+		}[]
+	>([])
 
 	let create_name = $state("")
 	let create_room_password = $state("")
@@ -34,14 +62,41 @@
 		alert(error)
 	})
 
-	socket.on("role", (role) => {
-		if (role === "admin") pushState("", { page: "admin" })
-		else if (role === "seeker") pushState("", { page: "seeker" })
-		else if (role === "hider") pushState("", { page: "hider" })
-	})
-
 	socket.on("players", (_players) => {
 		players = _players
+		if (join_id && join_name) {
+			const player = players.find((player) => player.name === join_name)
+			if (!player) return
+
+			switch (player.role) {
+				case "admin":
+					pushState("", { page: "admin" })
+					break
+				case "seeker":
+					pushState("", { page: "seeker" })
+					break
+				case "hider":
+					pushState("", { page: "hider" })
+					break
+			}
+		}
+
+		if (room_id && create_name) {
+			const player = players.find((player) => player.name === create_name)
+			if (!player) return
+
+			switch (player.role) {
+				case "admin":
+					pushState("", { page: "admin" })
+					break
+				case "seeker":
+					pushState("", { page: "seeker" })
+					break
+				case "hider":
+					pushState("", { page: "hider" })
+					break
+			}
+		}
 	})
 
 	socket.on("gps", (name, coords) => {
@@ -51,23 +106,21 @@
 	})
 
 	socket.on("radar", (meters, inside) => {
-		if (inside === undefined) {
-			navigator.geolocation.getCurrentPosition(
-				(postion) => {
-					socket.emit("radar", meters, postion.coords)
-				},
-				(e) => {
-					console.log(e)
-				},
-				{ enableHighAccuracy: true, maximumAge: 0, timeout: 10000 }
-			)
-		} else {
-			radars.push({ meters, inside })
-		}
+		radar_history.push({ meters, inside })
 	})
 
 	socket.on("coins", (new_coins) => {
 		coins = new_coins
+	})
+
+	socket.on("task", (task, state) => {
+		if (state !== "requested") task_history.pop()
+		task_history.push({ task, state })
+	})
+
+	socket.on("curse", (curse, raw, state) => {
+		if (state !== "requested") curse_history.pop()
+		curse_history.push({ curse, raw, state })
 	})
 
 	$effect(() => {
@@ -83,10 +136,9 @@
 			join_admin = sessionStorage.getItem("join_admin") === "true"
 			join_password = sessionStorage.getItem("join_password") ?? ""
 
-			if (join_id && join_name && join_password)
-				socket.emit("join", join_id, join_name, join_password, join_admin)
+			if (join_id && join_name) socket.emit("join", join_id, join_name, join_password, join_admin)
 
-			if (room_id && create_name && create_room_password && create_admin_password)
+			if (room_id && create_name)
 				socket.emit("join", room_id, create_name, create_admin_password, true)
 
 			navigator.geolocation.watchPosition(
@@ -238,8 +290,15 @@
 		<div class="text-2xl">Hider</div>
 
 		<div class="flex flex-row items-center justify-center gap-4">
-			<div class="text">Currency:</div>
-			<input class="input -sm input-primary w-20" type="number" />
+			<div class="text">Coins:</div>
+			<input
+				class="input input-sm input-primary w-20"
+				type="number"
+				bind:value={coins}
+				onkeydown={(ev) => {
+					if (ev.key === "Enter") socket.emit("coins", coins)
+				}}
+			/>
 		</div>
 
 		<div></div>
@@ -251,25 +310,70 @@
 
 		<div class="text-xl">Radar</div>
 		<div class="grid grid-cols-5 items-center justify-center gap-4">
-			{#each [5, 10, 25, 50, 100, 200, 500, 1000, 2000, 5000] as meters}
+			{#each radars as radar}
 				<button
 					class="btn btn-primary"
 					onclick={() => {
-						navigator.geolocation.getCurrentPosition(
-							(postion) => {
-								socket.emit("radar", meters, postion.coords)
-							},
-							(e) => {
-								console.log(e)
-							},
-							{ enableHighAccuracy: true, maximumAge: 0, timeout: 10000 }
-						)
-					}}>{meters >= 1000 ? `${meters / 1000}km` : `${meters}m`}</button
+						socket.emit("task", radar, "requested")
+					}}>{task_names[radar]}</button
 				>
 			{/each}
 		</div>
+		<div>Tasks</div>
+		<div class="grid grid-cols-5 items-center justify-center gap-4">
+			{#each Object.entries(task_categories) as [task, category]}
+				{#if category !== "radar"}
+					<button
+						class="btn btn-primary"
+						onclick={() => {
+							socket.emit("task", task as keyof typeof task_categories, "requested")
+						}}>{task_names[task as keyof typeof task_categories]}</button
+					>
+				{/if}
+			{/each}
+		</div>
 
-		{#each radars as radar}
+		<div class="grid grid-cols-3 items-center justify-center">
+			<div>Task</div>
+			<div>State</div>
+			<div></div>
+			{#each task_history as task}
+				<div>{task_names[task.task]}</div>
+				<div>{task.state}</div>
+				{#if task.state === "completed"}
+					<button
+						class="btn btn-primary btn-sm btn-error"
+						onclick={() => {
+							socket.emit("task", task.task, "confirmed")
+						}}>Mark as confirmed</button
+					>
+				{:else}
+					<div></div>
+				{/if}
+			{/each}
+		</div>
+
+		<div class="grid grid-cols-3 items-center justify-center">
+			<div>Curse</div>
+			<div>State</div>
+			<div></div>
+			{#each curse_history as curse}
+				<div>{curse_names[dice_curses[curse.curse]]}</div>
+				<div>{curse.state}</div>
+				{#if curse.state === "requested"}
+					<button
+						class="btn btn-primary btn-sm btn-error"
+						onclick={() => {
+							socket.emit("curse", curse.curse, curse.raw, "completed")
+						}}>Mark as completed</button
+					>
+				{:else}
+					<div></div>
+				{/if}
+			{/each}
+		</div>
+
+		{#each radar_history as radar}
 			<div class="text-xl">
 				You used a {radar.meters >= 1000 ? `${radar.meters / 1000}km` : `${radar.meters}m`} radar on
 				the hiders (they are {radar.inside ? "INSIDE" : "OUTSIDE"} the radius)
@@ -282,7 +386,64 @@
 
 		<div class="text-3xl">Hider</div>
 		<div>You have {coins} coins</div>
-		{#each radars as radar}
+
+		<div class="flex flex-row items-center gap-4 justify-center">
+			<div>Number of dices:</div>
+			<input
+				type="text"
+				bind:value={number_of_dices_str}
+				class="input input-sm input-primary w-20"
+			/>
+			<button
+				class="btn btn-primary btn-sm"
+				onclick={() => {
+					socket.emit("dice", number_of_dices_str)
+				}}>Roll</button
+			>
+		</div>
+
+		<div class="grid grid-cols-3 items-center justify-center">
+			<div>Task</div>
+			<div>State</div>
+			<div></div>
+			{#each task_history as task}
+				<div>{task_names[task.task]}</div>
+				<div>{task.state}</div>
+				{#if task.state === "requested"}
+					<button
+						class="btn btn-primary btn-sm btn-error"
+						onclick={() => {
+							socket.emit("task", task.task, "completed")
+						}}>Mark as completed</button
+					>
+				{:else}
+					<div></div>
+				{/if}
+			{/each}
+		</div>
+
+		<div class="grid grid-cols-3 items-center justify-center">
+			<div>Curse</div>
+			<div>State</div>
+			<div></div>
+			{#each curse_history as curse}
+				<div>{curse_names[dice_curses[curse.curse]]}</div>
+				<div>{curse.state}</div>
+
+				{#if curse.state === "completed"}
+					<button
+						class="btn btn-primary btn-sm btn-error"
+						onclick={() => {
+							socket.emit("curse", curse.curse, curse.raw, "confirmed")
+						}}>Mark as confirmed</button
+					>
+				{:else}
+					<div></div>
+				{/if}
+			{/each}
+		</div>
+
+		{#each radar_history as radar}
 			<div class="text-xl">
 				Seeker used a {radar.meters >= 1000 ? `${radar.meters / 1000}km` : `${radar.meters}m`} radar
 				on you (you are {radar.inside ? "INSIDE" : "OUTSIDE"} the radius)
