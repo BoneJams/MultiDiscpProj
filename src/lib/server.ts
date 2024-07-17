@@ -89,6 +89,7 @@ export default function (server: http.Server | Http2SecureServer) {
 
 			room.curses.forEach((curse) => socket.emit("curse", curse.curse, curse.dices, curse.state))
 			room.tasks.forEach((task) => socket.emit("task", task.task, task.state))
+			if (room.seeker && room.seeker_coords) socket.emit("gps", room.seeker, room.seeker_coords)
 
 			sockets[room_id][name] = socket
 
@@ -118,9 +119,9 @@ export default function (server: http.Server | Http2SecureServer) {
 
 			switch (candidate_player.role) {
 				case "seeker":
+					room.seeker = socket.data.name
 					room.seeker_coords = coords
-					io.to(`${room.id}-hider`).emit("gps", socket.data.name, coords)
-					io.to(`${room.id}-seeker`).emit("gps", socket.data.name, coords)
+					io.to(room.id).emit("gps", socket.data.name, coords)
 					break
 				case "hider":
 					room.hider_coords = coords
@@ -247,6 +248,7 @@ type Room = {
 	players: player[]
 	coins: number
 	seeker_coords?: GeolocationCoordinates
+	seeker?: string
 	hider_coords?: GeolocationCoordinates
 	curses: {
 		dices: number[]

@@ -9,9 +9,37 @@
 		task_names
 	} from "$lib/const"
 	import type { client_server, player, server_client } from "$lib/types"
+	import { Icon } from "leaflet"
 	import { io, type Socket } from "socket.io-client"
-	import { Map, Marker, TileLayer } from "sveaflet"
+	import { LayerGroup, Map, Marker, Popup, TileLayer } from "sveaflet"
 	import { untrack } from "svelte"
+
+	let greenIcon = new Icon({
+		iconUrl: "/img/marker-icon-green.png",
+		shadowUrl: "/img/marker-shadow.png",
+		iconSize: [25, 41],
+		iconAnchor: [12, 41],
+		popupAnchor: [1, -34],
+		shadowSize: [41, 41]
+	})
+
+	let redIcon = new Icon({
+		iconUrl: "/img/marker-icon-red.png",
+		shadowUrl: "/img/marker-shadow.png",
+		iconSize: [25, 41],
+		iconAnchor: [12, 41],
+		popupAnchor: [1, -34],
+		shadowSize: [41, 41]
+	})
+
+	let blueIcon = new Icon({
+		iconUrl: "/img/marker-icon-blue.png",
+		shadowUrl: "/img/marker-shadow.png",
+		iconSize: [25, 41],
+		iconAnchor: [12, 41],
+		popupAnchor: [1, -34],
+		shadowSize: [41, 41]
+	})
 
 	const radars: (keyof typeof task_categories)[] = [
 		"radar5",
@@ -32,6 +60,7 @@
 
 	let room_id = $state("")
 	let players = $state<player[]>([])
+	let self_coords = $state<GeolocationCoordinates>()
 	let seekers = $state<{ name: string; coords: GeolocationCoordinates }[]>([])
 	let coins = $state(0)
 	let task_history = $state<
@@ -148,6 +177,7 @@
 
 			navigator.geolocation.watchPosition(
 				(position) => {
+					self_coords = position.coords
 					socket.emit("gps", position.coords)
 				},
 				(e) => {
@@ -333,21 +363,7 @@
 
 		<hr class="w-full" />
 
-		<div class="text-xl">Seeker</div>
-
-		<div class="w-full h-screen">
-			<Map
-				options={{
-					center: [11.107654906837048, 106.61411702472978],
-					zoom: 14
-				}}
-			>
-				<TileLayer url={"https://tile.openstreetmap.org/{z}/{x}/{y}.png"} />
-				{#each seekers as seeker}
-					<Marker latLng={[seeker.coords.latitude, seeker.coords.longitude]} />
-				{/each}
-			</Map>
-		</div>
+		{@render render_map("admin")}
 
 		<!-- * SEEKER -->
 	{:else if $page.state.page === "seeker"}
@@ -390,19 +406,7 @@
 
 		<hr class="w-full" />
 
-		<div class="w-full h-screen">
-			<Map
-				options={{
-					center: [11.107654906837048, 106.61411702472978],
-					zoom: 14
-				}}
-			>
-				<TileLayer url={"https://tile.openstreetmap.org/{z}/{x}/{y}.png"} />
-				{#each seekers as seeker}
-					<Marker latLng={[seeker.coords.latitude, seeker.coords.longitude]} />
-				{/each}
-			</Map>
-		</div>
+		{@render render_map("seeker")}
 
 		<!-- * HIDER -->
 	{:else if $page.state.page === "hider"}
@@ -436,19 +440,7 @@
 
 		<hr class="w-full" />
 
-		<div class="w-full h-screen">
-			<Map
-				options={{
-					center: [11.107654906837048, 106.61411702472978],
-					zoom: 14
-				}}
-			>
-				<TileLayer url={"https://tile.openstreetmap.org/{z}/{x}/{y}.png"} />
-				{#each seekers as seeker}
-					<Marker latLng={[seeker.coords.latitude, seeker.coords.longitude]} />
-				{/each}
-			</Map>
-		</div>
+		{@render render_map("hider")}
 	{/if}
 </div>
 
@@ -548,5 +540,42 @@
 				{/if}
 			</div>
 		{/each}
+	</div>
+{/snippet}
+
+{#snippet render_map(role: "admin" | "seeker" | "hider")}
+	<div class="w-full h-screen">
+		<Map
+			options={{
+				center: [11.107654906837048, 106.61411702472978],
+				zoom: 14
+			}}
+		>
+			<TileLayer url={"https://tile.openstreetmap.org/{z}/{x}/{y}.png"} />
+
+			{#each seekers as seeker}
+				{#if seeker.name !== create_name && seeker.name !== join_name}
+					<LayerGroup>
+						<Marker
+							latLng={[seeker.coords.latitude, seeker.coords.longitude]}
+							options={{ icon: role === "hider" ? redIcon : blueIcon }}
+						>
+							<Popup options={{ content: `Seeker: ${seeker.name}` }}></Popup>
+						</Marker>
+					</LayerGroup>
+				{/if}
+			{/each}
+
+			{#if self_coords}
+				<LayerGroup>
+					<Marker
+						latLng={[self_coords.latitude, self_coords.longitude]}
+						options={{ icon: greenIcon }}
+					>
+						<Popup options={{ content: "You" }}></Popup>
+					</Marker>
+				</LayerGroup>
+			{/if}
+		</Map>
 	</div>
 {/snippet}
