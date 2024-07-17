@@ -24,14 +24,16 @@ export interface server_client {
 	"task"(
 		task: keyof typeof task_categories,
 		state: "requested" | "completed" | "confirmed",
-		result?: string
+		result?: string,
+		persist?: true
 	): void
 	"curse"(
 		curse: keyof typeof dice_curses,
 		dices: number[],
-		state: "requested" | "completed" | "confirmed"
+		state: "requested" | "completed" | "confirmed",
+		persist?: true
 	): void
-	"gps"(name: string, coords: GeolocationCoordinates): void
+	"gps"(name: string, coords: GeolocationCoordinates, hider?: true): void
 	"error"(error: string): void
 }
 

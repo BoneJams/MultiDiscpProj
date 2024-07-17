@@ -61,6 +61,7 @@
 	let room_id = $state("")
 	let players = $state<player[]>([])
 	let self_coords = $state<GeolocationCoordinates>()
+	let hiders = $state<{ name: string; coords: GeolocationCoordinates }[]>([])
 	let seekers = $state<{ name: string; coords: GeolocationCoordinates }[]>([])
 	let coins = $state(0)
 	let task_history = $state<
@@ -137,23 +138,29 @@
 		}
 	})
 
-	socket.on("gps", (name, coords) => {
-		const seeker = seekers.find((seeker) => seeker.name === name)
-		if (seeker) seeker.coords = coords
-		else seekers.push({ name, coords })
+	socket.on("gps", (name, coords, is_hider) => {
+		if (is_hider) {
+			const hider = hiders.find((hider) => hider.name === name)
+			if (hider) hider.coords = coords
+			else hiders.push({ name, coords })
+		} else {
+			const seeker = seekers.find((seeker) => seeker.name === name)
+			if (seeker) seeker.coords = coords
+			else seekers.push({ name, coords })
+		}
 	})
 
 	socket.on("coins", (new_coins) => {
 		coins = new_coins
 	})
 
-	socket.on("task", (task, state, result) => {
-		if (state !== "requested") task_history.pop()
+	socket.on("task", (task, state, result, persist) => {
+		if (state !== "requested" && !persist) task_history.pop()
 		task_history.push({ task, state, result })
 	})
 
-	socket.on("curse", (curse, dices, state) => {
-		if (state !== "requested") curse_history.pop()
+	socket.on("curse", (curse, dices, state, persist) => {
+		if (state !== "requested" && !persist) curse_history.pop()
 		curse_history.push({ curse, dices, state })
 	})
 
@@ -363,7 +370,7 @@
 
 		<hr class="w-full" />
 
-		{@render render_map("admin")}
+		{@render render_map()}
 
 		<!-- * SEEKER -->
 	{:else if $page.state.page === "seeker"}
@@ -406,7 +413,7 @@
 
 		<hr class="w-full" />
 
-		{@render render_map("seeker")}
+		{@render render_map()}
 
 		<!-- * HIDER -->
 	{:else if $page.state.page === "hider"}
@@ -440,7 +447,7 @@
 
 		<hr class="w-full" />
 
-		{@render render_map("hider")}
+		{@render render_map()}
 	{/if}
 </div>
 
@@ -543,22 +550,38 @@
 	</div>
 {/snippet}
 
-{#snippet render_map(role: "admin" | "seeker" | "hider")}
-	<div class="w-full h-screen">
+{#snippet render_map()}
+	<div class="w-full aspect-video">
 		<Map
 			options={{
-				center: [11.107654906837048, 106.61411702472978],
+				center: [
+					self_coords?.latitude ?? 11.107654906837048,
+					self_coords?.longitude ?? 106.61411702472978
+				],
 				zoom: 14
 			}}
 		>
 			<TileLayer url={"https://tile.openstreetmap.org/{z}/{x}/{y}.png"} />
+
+			{#each hiders as hider}
+				{#if hider.name !== create_name && hider.name !== join_name}
+					<LayerGroup>
+						<Marker
+							latLng={[hider.coords.latitude, hider.coords.longitude]}
+							options={{ icon: blueIcon }}
+						>
+							<Popup options={{ content: `Hider: ${hider.name}` }}></Popup>
+						</Marker>
+					</LayerGroup>
+				{/if}
+			{/each}
 
 			{#each seekers as seeker}
 				{#if seeker.name !== create_name && seeker.name !== join_name}
 					<LayerGroup>
 						<Marker
 							latLng={[seeker.coords.latitude, seeker.coords.longitude]}
-							options={{ icon: role === "hider" ? redIcon : blueIcon }}
+							options={{ icon: redIcon }}
 						>
 							<Popup options={{ content: `Seeker: ${seeker.name}` }}></Popup>
 						</Marker>

@@ -87,8 +87,12 @@ export default function (server: http.Server | Http2SecureServer) {
 
 			socket.emit("coins", room.coins)
 
-			room.curses.forEach((curse) => socket.emit("curse", curse.curse, curse.dices, curse.state))
-			room.tasks.forEach((task) => socket.emit("task", task.task, task.state))
+			room.curses.forEach(
+				(curse) => socket.emit("curse", curse.curse, curse.dices, curse.state),
+				true
+			)
+			room.tasks.forEach((task) => socket.emit("task", task.task, task.state), true)
+
 			if (room.seeker && room.seeker_coords) socket.emit("gps", room.seeker, room.seeker_coords)
 
 			sockets[room_id][name] = socket
@@ -125,6 +129,8 @@ export default function (server: http.Server | Http2SecureServer) {
 					break
 				case "hider":
 					room.hider_coords = coords
+					io.to(`${room.id}-admin`).emit("gps", socket.data.name, coords, true)
+					io.to(`${room.id}-hider`).emit("gps", socket.data.name, coords, true)
 					break
 			}
 		})
