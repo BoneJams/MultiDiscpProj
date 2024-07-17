@@ -120,6 +120,7 @@ export default function (server: http.Server | Http2SecureServer) {
 				case "seeker":
 					room.seeker_coords = coords
 					io.to(`${room.id}-hider`).emit("gps", socket.data.name, coords)
+					io.to(`${room.id}-seeker`).emit("gps", socket.data.name, coords)
 					break
 				case "hider":
 					room.hider_coords = coords

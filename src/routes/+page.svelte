@@ -331,6 +331,24 @@
 
 		{@render render_curse_history("admin")}
 
+		<hr class="w-full" />
+
+		<div class="text-xl">Seeker</div>
+
+		<div class="w-full h-screen">
+			<Map
+				options={{
+					center: [11.107654906837048, 106.61411702472978],
+					zoom: 14
+				}}
+			>
+				<TileLayer url={"https://tile.openstreetmap.org/{z}/{x}/{y}.png"} />
+				{#each seekers as seeker}
+					<Marker latLng={[seeker.coords.latitude, seeker.coords.longitude]} />
+				{/each}
+			</Map>
+		</div>
+
 		<!-- * SEEKER -->
 	{:else if $page.state.page === "seeker"}
 		{@render leave_game_button()}
@@ -369,6 +387,22 @@
 		<hr class="w-full" />
 
 		{@render render_curse_history("seeker")}
+
+		<hr class="w-full" />
+
+		<div class="w-full h-screen">
+			<Map
+				options={{
+					center: [11.107654906837048, 106.61411702472978],
+					zoom: 14
+				}}
+			>
+				<TileLayer url={"https://tile.openstreetmap.org/{z}/{x}/{y}.png"} />
+				{#each seekers as seeker}
+					<Marker latLng={[seeker.coords.latitude, seeker.coords.longitude]} />
+				{/each}
+			</Map>
+		</div>
 
 		<!-- * HIDER -->
 	{:else if $page.state.page === "hider"}
@@ -451,23 +485,25 @@
 				{curse.state}
 			</div>
 
-			{#if role === "seeker" && curse.state === "requested"}
-				<button
-					class="btn btn-primary btn-sm btn-error"
-					onclick={() => {
-						socket.emit("curse", curse.curse, curse.dices, "completed")
-					}}>Mark as completed</button
-				>
-			{:else if role === "hider" && curse.state === "completed"}
-				<button
-					class="btn btn-primary btn-sm btn-error"
-					onclick={() => {
-						socket.emit("curse", curse.curse, curse.dices, "confirmed")
-					}}>Mark as confirmed</button
-				>
-			{:else}
-				<div></div>
-			{/if}
+			<div>
+				{#if (role === "seeker" || role === "admin") && curse.state === "requested"}
+					<button
+						class="btn btn-primary btn-sm btn-error"
+						onclick={() => {
+							socket.emit("curse", curse.curse, curse.dices, "completed")
+						}}>Mark as completed</button
+					>
+				{/if}
+				{#if (role === "hider" || role === "admin") && curse.state === "completed"}
+					<button
+						class="btn btn-primary btn-sm btn-error"
+						onclick={() => {
+							socket.emit("curse", curse.curse, curse.dices, "confirmed")
+						}}
+						>Mark as confirmed
+					</button>
+				{/if}
+			</div>
 		{/each}
 	</div>
 {/snippet}
@@ -492,23 +528,25 @@
 			>
 				{task.state}
 			</div>
-			{#if role === "hider" && task.state === "requested"}
-				<button
-					class="btn btn-primary btn-sm btn-error"
-					onclick={() => {
-						socket.emit("task", task.task, "completed")
-					}}>Mark as completed</button
-				>
-			{:else if role === "seeker" && task.state === "completed"}
-				<button
-					class="btn btn-primary btn-sm btn-error"
-					onclick={() => {
-						socket.emit("task", task.task, "confirmed")
-					}}>Mark as confirmed</button
-				>
-			{:else}
-				<div>{task.result ?? ""}</div>
-			{/if}
+			<div>
+				{#if (role === "hider" || role === "admin") && task.state === "requested"}
+					<button
+						class="btn btn-primary btn-sm btn-error"
+						onclick={() => {
+							socket.emit("task", task.task, "completed")
+						}}>Mark as completed</button
+					>
+				{/if}
+
+				{#if (role === "seeker" || role === "admin") && task.state === "completed"}
+					<button
+						class="btn btn-primary btn-sm btn-error"
+						onclick={() => {
+							socket.emit("task", task.task, "confirmed")
+						}}>Mark as confirmed</button
+					>
+				{/if}
+			</div>
 		{/each}
 	</div>
 {/snippet}
