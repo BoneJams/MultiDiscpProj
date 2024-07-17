@@ -227,14 +227,14 @@ export default function (server: http.Server | Http2SecureServer) {
 		})
 
 		socket.on("disconnecting", () => {
-			socket.rooms.forEach((room_id) => {
-				connected_clients[parseInt(room_id)] -= 1
-				if (connected_clients[parseInt(room_id)] > 0) return
-				room_ids.push(room_id)
-				const index = rooms.findIndex((room) => room.id === room_id)
-				if (index === -1) return
-				rooms.splice(index, 1)
-			})
+			if (!room) return
+
+			connected_clients[parseInt(room.id)] -= 1
+			if (connected_clients[parseInt(room.id)] > 0) return
+			room_ids.push(room.id)
+			const index = rooms.findIndex(({ id }) => id === room?.id)
+			if (index === -1) return
+			rooms.splice(index, 1)
 		})
 	})
 }
