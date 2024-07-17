@@ -1,7 +1,13 @@
 <script lang="ts">
 	import { pushState } from "$app/navigation"
 	import { page } from "$app/stores"
-	import { curse_names, dice_curses, task_categories, task_names } from "$lib/const"
+	import {
+		curse_names,
+		dice_curses,
+		task_categories,
+		task_descriptions,
+		task_names
+	} from "$lib/const"
 	import type { client_server, player, server_client } from "$lib/types"
 	import { io, type Socket } from "socket.io-client"
 	import { Map, Marker, TileLayer } from "sveaflet"
@@ -28,14 +34,17 @@
 	let players = $state<player[]>([])
 	let seekers = $state<{ name: string; coords: GeolocationCoordinates }[]>([])
 	let coins = $state(0)
-	let radar_history = $state<{ meters: number; inside: boolean }[]>([])
 	let task_history = $state<
-		{ task: keyof typeof task_categories; state: "requested" | "completed" | "confirmed" }[]
+		{
+			task: keyof typeof task_categories
+			state: "requested" | "completed" | "confirmed"
+			result?: string
+		}[]
 	>([])
 	let curse_history = $state<
 		{
 			curse: keyof typeof dice_curses
-			raw: number
+			dices: number[]
 			state: "requested" | "completed" | "confirmed"
 		}[]
 	>([])
@@ -105,22 +114,18 @@
 		else seekers.push({ name, coords })
 	})
 
-	socket.on("radar", (meters, inside) => {
-		radar_history.push({ meters, inside })
-	})
-
 	socket.on("coins", (new_coins) => {
 		coins = new_coins
 	})
 
-	socket.on("task", (task, state) => {
+	socket.on("task", (task, state, result) => {
 		if (state !== "requested") task_history.pop()
-		task_history.push({ task, state })
+		task_history.push({ task, state, result })
 	})
 
-	socket.on("curse", (curse, raw, state) => {
+	socket.on("curse", (curse, dices, state) => {
 		if (state !== "requested") curse_history.pop()
-		curse_history.push({ curse, raw, state })
+		curse_history.push({ curse, dices, state })
 	})
 
 	$effect(() => {
@@ -165,6 +170,18 @@
 		sessionStorage.setItem("join_admin", join_admin.toString())
 		sessionStorage.setItem("join_password", join_password)
 	})
+
+	function create(ev: KeyboardEvent | MouseEvent) {
+		if (ev instanceof KeyboardEvent && ev.key !== "Enter") return
+		if (!create_name) return alert("Please enter a name")
+		socket.emit("create", create_name, create_room_password, create_admin_password)
+	}
+
+	function join(ev: KeyboardEvent | MouseEvent) {
+		if (ev instanceof KeyboardEvent && ev.key !== "Enter") return
+		if (!join_id || !join_name) return alert("Please enter a room ID and a name")
+		socket.emit("join", join_id, join_name, join_password, join_admin)
+	}
 </script>
 
 <div class="m-4 flex flex-col items-center justify-center gap-4">
@@ -178,27 +195,37 @@
 				type="password"
 				class="input input-primary input-sm"
 				bind:value={create_room_password}
+				onkeydown={create}
 			/>
 			<div class="text-right">Admin Password</div>
 			<input
 				type="password"
 				class="input input-primary input-sm"
 				bind:value={create_admin_password}
+				onkeydown={create}
 			/>
 			<div class="col-span-2 flex items-center justify-center">
-				<button
-					class="btn btn-sm btn-primary"
-					onclick={() => {
-						socket.emit("create", create_name, create_room_password, create_admin_password)
-					}}>Create</button
+				<button disabled={!create_name} class="btn btn-sm btn-primary" onclick={create}
+					>Create</button
 				>
 			</div>
 			<hr class="col-span-2" />
 			<div class="text-xl col-span-2 text-center">Join a room</div>
 			<div class="text-right">Your Name</div>
-			<input type="text" class="input input-primary input-sm" bind:value={join_name} />
+			<input
+				type="text"
+				class="input input-primary input-sm"
+				bind:value={join_name}
+				onkeydown={join}
+			/>
 			<div class="text-right">Room ID</div>
-			<input class="input input-primary input-sm" type="text" bind:value={join_id} />
+			<input
+				class="input input-primary input-sm"
+				inputmode="numeric"
+				type="text"
+				bind:value={join_id}
+				onkeydown={join}
+			/>
 			<div class="text-right">Join as Admin?</div>
 			<input type="checkbox" class="toggle toggle-primary" bind:checked={join_admin} />
 			{#if join_admin}
@@ -206,12 +233,18 @@
 			{:else}
 				<div class="text-right">Room Password</div>
 			{/if}
-			<input type="password" class="input input-primary input-sm" bind:value={join_password} />
+			<input
+				type="password"
+				class="input input-primary input-sm"
+				bind:value={join_password}
+				onkeydown={join}
+			/>
 
 			<div class="col-span-2 flex items-center justify-center">
 				<button
 					class="btn btn-primary btn-sm"
-					disabled={!join_id}
+					disabled={!join_name || !join_id}
+					onkeydown={join}
 					onclick={() => {
 						if (!join_id) return
 						socket.emit("join", join_id, join_name, join_password, join_admin)
@@ -247,12 +280,15 @@
 
 		<div class="text-3xl">Admin Panel</div>
 
+		<hr class="w-full" />
+
 		<div class="grid grid-cols-2 gap-1">
 			<div>Player</div>
 			<div>Role</div>
 			{#each players as player}
 				<div>{player.name}</div>
 				<select
+					disabled={player.name === join_name || player.name === create_name}
 					class="select select-primary select-sm"
 					bind:value={player.role}
 					onchange={() => {
@@ -268,24 +304,7 @@
 			{/each}
 		</div>
 
-		<div class="text-2xl">Seeker</div>
-
-		<div class="text-xl">Radar</div>
-
-		<div class="grid grid-cols-5 items-center justify-center gap-4">
-			<div class="btn btn-primary">5m</div>
-			<div class="btn btn-error">10m</div>
-			<div class="btn btn-primary">25m</div>
-			<div class="btn btn-error">50m</div>
-			<div class="btn btn-primary">100m</div>
-			<div class="btn btn-error">200m</div>
-			<div class="btn btn-primary">500m</div>
-			<div class="btn btn-error">1km</div>
-			<div class="btn btn-primary">2km</div>
-			<div class="btn btn-error">5km</div>
-		</div>
-
-		<hr class="w-80" />
+		<hr class="w-full" />
 
 		<div class="text-2xl">Hider</div>
 
@@ -299,9 +318,19 @@
 					if (ev.key === "Enter") socket.emit("coins", coins)
 				}}
 			/>
+			<button class="btn btn-error btn-sm" onclick={() => socket.emit("coins", coins)}
+				>Override coins</button
+			>
 		</div>
 
-		<div></div>
+		<hr class="w-full" />
+
+		{@render render_task_history("admin")}
+
+		<hr class="w-full" />
+
+		{@render render_curse_history("admin")}
+
 		<!-- * SEEKER -->
 	{:else if $page.state.page === "seeker"}
 		{@render leave_game_button()}
@@ -333,52 +362,13 @@
 			{/each}
 		</div>
 
-		<div class="grid grid-cols-3 items-center justify-center">
-			<div>Task</div>
-			<div>State</div>
-			<div></div>
-			{#each task_history as task}
-				<div>{task_names[task.task]}</div>
-				<div>{task.state}</div>
-				{#if task.state === "completed"}
-					<button
-						class="btn btn-primary btn-sm btn-error"
-						onclick={() => {
-							socket.emit("task", task.task, "confirmed")
-						}}>Mark as confirmed</button
-					>
-				{:else}
-					<div></div>
-				{/if}
-			{/each}
-		</div>
+		<hr class="w-full" />
 
-		<div class="grid grid-cols-3 items-center justify-center">
-			<div>Curse</div>
-			<div>State</div>
-			<div></div>
-			{#each curse_history as curse}
-				<div>{curse_names[dice_curses[curse.curse]]}</div>
-				<div>{curse.state}</div>
-				{#if curse.state === "requested"}
-					<button
-						class="btn btn-primary btn-sm btn-error"
-						onclick={() => {
-							socket.emit("curse", curse.curse, curse.raw, "completed")
-						}}>Mark as completed</button
-					>
-				{:else}
-					<div></div>
-				{/if}
-			{/each}
-		</div>
+		{@render render_task_history("seeker")}
 
-		{#each radar_history as radar}
-			<div class="text-xl">
-				You used a {radar.meters >= 1000 ? `${radar.meters / 1000}km` : `${radar.meters}m`} radar on
-				the hiders (they are {radar.inside ? "INSIDE" : "OUTSIDE"} the radius)
-			</div>
-		{/each}
+		<hr class="w-full" />
+
+		{@render render_curse_history("seeker")}
 
 		<!-- * HIDER -->
 	{:else if $page.state.page === "hider"}
@@ -402,59 +392,21 @@
 			>
 		</div>
 
-		<div class="grid grid-cols-3 items-center justify-center">
-			<div>Task</div>
-			<div>State</div>
-			<div></div>
-			{#each task_history as task}
-				<div>{task_names[task.task]}</div>
-				<div>{task.state}</div>
-				{#if task.state === "requested"}
-					<button
-						class="btn btn-primary btn-sm btn-error"
-						onclick={() => {
-							socket.emit("task", task.task, "completed")
-						}}>Mark as completed</button
-					>
-				{:else}
-					<div></div>
-				{/if}
-			{/each}
-		</div>
+		<hr class="w-full" />
 
-		<div class="grid grid-cols-3 items-center justify-center">
-			<div>Curse</div>
-			<div>State</div>
-			<div></div>
-			{#each curse_history as curse}
-				<div>{curse_names[dice_curses[curse.curse]]}</div>
-				<div>{curse.state}</div>
+		{@render render_task_history("hider")}
 
-				{#if curse.state === "completed"}
-					<button
-						class="btn btn-primary btn-sm btn-error"
-						onclick={() => {
-							socket.emit("curse", curse.curse, curse.raw, "confirmed")
-						}}>Mark as confirmed</button
-					>
-				{:else}
-					<div></div>
-				{/if}
-			{/each}
-		</div>
+		<hr class="w-full" />
 
-		{#each radar_history as radar}
-			<div class="text-xl">
-				Seeker used a {radar.meters >= 1000 ? `${radar.meters / 1000}km` : `${radar.meters}m`} radar
-				on you (you are {radar.inside ? "INSIDE" : "OUTSIDE"} the radius)
-			</div>
-		{/each}
+		{@render render_curse_history("hider")}
 
-		<div style="width:100%;height:500px;">
+		<hr class="w-full" />
+
+		<div class="w-full h-screen">
 			<Map
 				options={{
-					center: [51.505, -0.09],
-					zoom: 13
+					center: [11.107654906837048, 106.61411702472978],
+					zoom: 14
 				}}
 			>
 				<TileLayer url={"https://tile.openstreetmap.org/{z}/{x}/{y}.png"} />
@@ -474,4 +426,89 @@
 			location.reload()
 		}}>Leave Game</button
 	>
+{/snippet}
+
+{#snippet render_curse_history(role: "admin" | "seeker" | "hider")}
+	<div class="text-xl">Curse History</div>
+
+	<div class="grid grid-cols-4 w-full items-center justify-center gap-4">
+		<div>Dices</div>
+		<div>Curse</div>
+		<div>State</div>
+		<div>Result</div>
+		{#each curse_history as curse}
+			<div>{curse.dices.join(", ")}</div>
+			<div>{curse_names[dice_curses[curse.curse]]}</div>
+			<div
+				class={curse.state === "requested"
+					? "text-error"
+					: curse.state === "completed"
+						? "text-warning"
+						: curse.state === "confirmed"
+							? "text-success"
+							: ""}
+			>
+				{curse.state}
+			</div>
+
+			{#if role === "hider" && curse.state === "completed"}
+				<button
+					class="btn btn-primary btn-sm btn-error"
+					onclick={() => {
+						socket.emit("curse", curse.curse, curse.dices, "confirmed")
+					}}>Mark as confirmed</button
+				>
+			{:else if role === "seeker" && curse.state === "requested"}
+				<button
+					class="btn btn-primary btn-sm btn-error"
+					onclick={() => {
+						socket.emit("curse", curse.curse, curse.dices, "completed")
+					}}>Mark as completed</button
+				>
+			{:else}
+				<div></div>
+			{/if}
+		{/each}
+	</div>
+{/snippet}
+
+{#snippet render_task_history(role: "admin" | "seeker" | "hider")}
+	<div class="text-xl">Task History</div>
+
+	<div class="grid grid-cols-3 w-full items-center justify-center gap-4">
+		<div>Task</div>
+		<div>State</div>
+		<div>Result</div>
+		{#each task_history as task}
+			<div>{task_names[task.task]} ({task_descriptions[task.task]})</div>
+			<div
+				class={task.state === "requested"
+					? "text-error"
+					: task.state === "completed"
+						? "text-warning"
+						: task.state === "confirmed"
+							? "text-success"
+							: ""}
+			>
+				{task.state}
+			</div>
+			{#if role === "hider" && task.state === "requested"}
+				<button
+					class="btn btn-primary btn-sm btn-error"
+					onclick={() => {
+						socket.emit("task", task.task, "completed")
+					}}>Mark as completed</button
+				>
+			{:else if role === "seeker" && task.state === "requested"}
+				<button
+					class="btn btn-primary btn-sm btn-error"
+					onclick={() => {
+						socket.emit("task", task.task, "completed")
+					}}>Mark as completed</button
+				>
+			{:else}
+				<div>{task.result ?? ""}</div>
+			{/if}
+		{/each}
+	</div>
 {/snippet}

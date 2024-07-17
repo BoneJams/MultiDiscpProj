@@ -16,6 +16,7 @@ export default function (server: http.Server | Http2SecureServer) {
 
 	const room_ids = Array.from({ length: 899 }, (_, i) => (i + 100).toString())
 	const rooms: Room[] = []
+	const connected_clients = new Array(1000).fill(0)
 
 	io.on("connection", (socket) => {
 		let room: Room | undefined
@@ -46,7 +47,7 @@ export default function (server: http.Server | Http2SecureServer) {
 
 			room = candidate_room
 
-			if (admin ? password !== room.admin_password : password !== room.room_password)
+			if (password !== (admin ? room.admin_password : room.room_password))
 				return socket.emit("error", "Wrong password")
 
 			const candidate_player = room.players.find((player) => player.name === name)
@@ -58,7 +59,10 @@ export default function (server: http.Server | Http2SecureServer) {
 						"If you are an admin please log in as admin. If you are not an admin, please choose another name."
 					)
 				if (candidate_player.role !== "admin" && admin)
-					return socket.emit("error", "You are not an admin.")
+					return socket.emit(
+						"error",
+						"If you are an admin, please choose another name. If you are not an admin, turn off join as admin."
+					)
 
 				switch (candidate_player.role) {
 					case "admin":
@@ -83,7 +87,12 @@ export default function (server: http.Server | Http2SecureServer) {
 
 			socket.emit("coins", room.coins)
 
+			room.curses.forEach((curse) => socket.emit("curse", curse.curse, curse.dices, curse.state))
+			room.tasks.forEach((task) => socket.emit("task", task.task, task.state))
+
 			sockets[room_id][name] = socket
+
+			connected_clients[parseInt(room_id)] += 1
 		})
 
 		socket.on("role", (name, role) => {
@@ -136,18 +145,24 @@ export default function (server: http.Server | Http2SecureServer) {
 				if (!room.hider_coords || !room.seeker_coords)
 					return socket.emit("error", "Hider or Seeker not found")
 
+				io.to(room.id).emit("task", task, "requested")
+
 				const distance = measure(room.hider_coords, room.seeker_coords)
 
 				io.to(room.id).emit(
-					"radar",
-					radar_meters[task as (typeof radars)[number]],
-					distance < radar_meters[task as (typeof radars)[number]]
+					"task",
+					task,
+					"confirmed",
+					distance < radar_meters[task as (typeof radars)[number]] ? "inside" : "outside"
 				)
-				io.to(room.id).emit("task", task, "confirmed")
 				room.coins += category_coins[task_categories[task]]
 				io.to(room.id).emit("coins", room.coins)
 				socket.emit("coins", room.coins)
-				room.tasks.push({ task, state: "confirmed" })
+				room.tasks.push({
+					task,
+					state: "confirmed",
+					result: distance < radar_meters[task as (typeof radars)[number]] ? "inside" : "outside"
+				})
 			} else {
 				io.to(room.id).emit("task", task, state)
 				if (state !== "requested") room.tasks.pop()
@@ -184,28 +199,42 @@ export default function (server: http.Server | Http2SecureServer) {
 				return socket.emit("error", "You can only send one curse at a time")
 			}
 
+			const dices: number[] = []
 			let raw = 0
 			for (let i = 0; i < number_of_dices; i++) {
-				raw += Math.floor(Math.random() * 6) + 1
+				const dice = Math.floor(Math.random() * 6) + 1
+				dices.push(dice)
+				raw += dice
 			}
 			const curse = raw > 24 ? 24 : (raw as keyof typeof dice_curses)
-			io.to(room.id).emit("curse", curse, raw, "requested")
+			io.to(room.id).emit("curse", curse, dices, "requested")
 			room.coins -= number_of_dices * dice_coins
 			io.to(room.id).emit("coins", room.coins)
-			room.curses.push({ curse, raw, state: "requested" })
+			room.curses.push({ curse, dices, state: "requested" })
 		})
 
-		socket.on("curse", (curse, raw, state) => {
+		socket.on("curse", (curse, dices, state) => {
 			if (!room) return
-			io.to(room.id).emit("curse", curse, raw, state)
+			io.to(room.id).emit("curse", curse, dices, state)
 			if (state !== "requested") room.curses.pop()
-			room.curses.push({ curse, raw, state })
+			room.curses.push({ curse, dices, state })
 		})
 
 		socket.on("coins", (coins) => {
 			if (!room) return
 			room.coins = coins
 			io.to(room.id).emit("coins", coins)
+		})
+
+		socket.on("disconnecting", () => {
+			socket.rooms.forEach((room_id) => {
+				connected_clients[parseInt(room_id)] -= 1
+				if (connected_clients[parseInt(room_id)] > 0) return
+				room_ids.push(room_id)
+				const index = rooms.findIndex((room) => room.id === room_id)
+				if (index === -1) return
+				rooms.splice(index, 1)
+			})
 		})
 	})
 }
@@ -219,13 +248,14 @@ type Room = {
 	seeker_coords?: GeolocationCoordinates
 	hider_coords?: GeolocationCoordinates
 	curses: {
+		dices: number[]
 		curse: keyof typeof dice_curses
-		raw: number
 		state: "requested" | "completed" | "confirmed"
 	}[]
 	tasks: {
 		task: keyof typeof task_categories
 		state: "requested" | "completed" | "confirmed"
+		result?: string
 	}[]
 }
 

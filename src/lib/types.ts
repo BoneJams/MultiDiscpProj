@@ -8,7 +8,7 @@ export interface client_server {
 	"dice"(number_of_dices: string): void
 	"curse"(
 		curse: keyof typeof dice_curses,
-		raw: number,
+		dices: number[],
 		state: "requested" | "completed" | "confirmed"
 	): void
 	"gps"(coords: GeolocationCoordinates): void
@@ -21,11 +21,14 @@ export interface server_client {
 	"join"(room_id: string): void
 	"players"(players: player[]): void
 	"coins"(coins: number): void
-	"task"(task: keyof typeof task_categories, state: "requested" | "completed" | "confirmed"): void
-	"radar"(meters: number, inside: boolean): void
+	"task"(
+		task: keyof typeof task_categories,
+		state: "requested" | "completed" | "confirmed",
+		result?: string
+	): void
 	"curse"(
 		curse: keyof typeof dice_curses,
-		raw: number,
+		dices: number[],
 		state: "requested" | "completed" | "confirmed"
 	): void
 	"gps"(name: string, coords: GeolocationCoordinates): void
