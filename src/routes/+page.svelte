@@ -451,19 +451,19 @@
 				{curse.state}
 			</div>
 
-			{#if role === "hider" && curse.state === "completed"}
-				<button
-					class="btn btn-primary btn-sm btn-error"
-					onclick={() => {
-						socket.emit("curse", curse.curse, curse.dices, "confirmed")
-					}}>Mark as confirmed</button
-				>
-			{:else if role === "seeker" && curse.state === "requested"}
+			{#if role === "seeker" && curse.state === "requested"}
 				<button
 					class="btn btn-primary btn-sm btn-error"
 					onclick={() => {
 						socket.emit("curse", curse.curse, curse.dices, "completed")
 					}}>Mark as completed</button
+				>
+			{:else if role === "hider" && curse.state === "completed"}
+				<button
+					class="btn btn-primary btn-sm btn-error"
+					onclick={() => {
+						socket.emit("curse", curse.curse, curse.dices, "confirmed")
+					}}>Mark as confirmed</button
 				>
 			{:else}
 				<div></div>
@@ -499,12 +499,12 @@
 						socket.emit("task", task.task, "completed")
 					}}>Mark as completed</button
 				>
-			{:else if role === "seeker" && task.state === "requested"}
+			{:else if role === "seeker" && task.state === "completed"}
 				<button
 					class="btn btn-primary btn-sm btn-error"
 					onclick={() => {
-						socket.emit("task", task.task, "completed")
-					}}>Mark as completed</button
+						socket.emit("task", task.task, "confirmed")
+					}}>Mark as confirmed</button
 				>
 			{:else}
 				<div>{task.result ?? ""}</div>
