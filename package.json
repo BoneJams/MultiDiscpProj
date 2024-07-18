@@ -1,6 +1,6 @@
 {
 	"name": "laghs",
-	"version": "2024.07.18.0",
+	"version": "2024.07.18.1",
 	"private": true,
 	"scripts": {
 		"dev": "vite dev",

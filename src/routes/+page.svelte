@@ -347,20 +347,19 @@
 		{@render leave_game_button()}
 
 		<div class="text-3xl">Room ID: {room_id}</div>
-		<div class="text-xl">Player List</div>
-		<div class="grid grid-cols-[1fr_2rem] items-center justify-center gap-4">
-			<div>[Player 1]</div>
-			<button class="btn btn-error btn-sm">X</button>
-			<div>[Player 2]</div>
-			<button class="btn btn-error btn-sm">X</button>
-			<div>[Player 3]</div>
-			<button class="btn btn-error btn-sm">X</button>
-			<div>...</div>
+		<div class="text-xl">Waiting for admin to assign roles...</div>
+		<div>Player List:</div>
+		<div class="grid grid-cols-2 gap-1">
+			<div>Player</div>
+			<div>Role</div>
+			{#each players as player}
+				{#if !player.banned}
+					<div>{player.name}</div>
+					<div>{player.role ?? "Waiting for admin to assign role..."}</div>
+				{/if}
+			{/each}
 		</div>
 
-		<div class="fixed bottom-4 flex w-full items-center justify-center">
-			<button class="btn btn-primary">Start Game</button>
-		</div>
 		<!-- * ADMIN -->
 	{:else if $page.state.page === "admin"}
 		{@render leave_game_button()}
@@ -676,6 +675,10 @@
 							socket.emit("task", task.task, "confirmed")
 						}}>Mark as confirmed</button
 					>
+				{/if}
+
+				{#if task.result}
+					<div>{task.result}</div>
 				{/if}
 			</div>
 		{/each}

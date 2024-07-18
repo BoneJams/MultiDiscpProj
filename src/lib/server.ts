@@ -162,19 +162,19 @@ export default function (server: http.Server | Http2SecureServer) {
 				if (!room.hider_coords || !room.seeker_coords)
 					return socket.emit("error", "Hider or Seeker not found")
 
-				io.to(room.id).emit("task", task, "requested")
-
 				const distance = measure(room.hider_coords, room.seeker_coords)
 
 				io.to(room.id).emit(
 					"task",
 					task,
 					"confirmed",
-					distance < radar_meters[task as (typeof radars)[number]] ? "inside" : "outside"
+					distance < radar_meters[task as (typeof radars)[number]] ? "inside" : "outside",
+					true
 				)
+
 				room.coins += category_coins[task_categories[task]]
 				io.to(room.id).emit("coins", room.coins)
-				socket.emit("coins", room.coins)
+
 				room.tasks.push({
 					task,
 					state: "confirmed",
@@ -268,6 +268,8 @@ export default function (server: http.Server | Http2SecureServer) {
 					candidate_player.banned = false
 				}
 			}
+
+			io.to(room.id).emit("players", room.players)
 		})
 
 		socket.on("end", () => {
