@@ -27,10 +27,14 @@ export default function (server: http.Server | Http2SecureServer) {
 				id,
 				room_password,
 				admin_password,
-				players: [{ name, role: "admin" }],
+				players: [{ name, role: "admin", banned: false }],
 				coins: 0,
 				curses: [],
-				tasks: []
+				tasks: [],
+				game: "undefined",
+				started_at: 0,
+				ended_at: 0,
+				end_state: undefined
 			})
 
 			socket.emit("create", id)
@@ -51,6 +55,8 @@ export default function (server: http.Server | Http2SecureServer) {
 				return socket.emit("error", "Wrong password")
 
 			const candidate_player = room.players.find((player) => player.name === name)
+
+			if (candidate_player && candidate_player.banned) return socket.emit("ban")
 
 			if (candidate_player) {
 				if (candidate_player.role === "admin" && !admin)
@@ -76,7 +82,7 @@ export default function (server: http.Server | Http2SecureServer) {
 						break
 				}
 			} else {
-				room.players.push({ role: admin ? "admin" : undefined, name })
+				room.players.push({ role: admin ? "admin" : undefined, name, banned: false })
 			}
 
 			socket.emit("join", room_id)
@@ -92,8 +98,11 @@ export default function (server: http.Server | Http2SecureServer) {
 				true
 			)
 			room.tasks.forEach((task) => socket.emit("task", task.task, task.state), true)
+			socket.emit("game", room.game)
 
 			if (room.seeker && room.seeker_coords) socket.emit("gps", room.seeker, room.seeker_coords)
+
+			if (room.game === "started") socket.emit("start", room.started_at)
 
 			sockets[room_id][name] = socket
 
@@ -234,6 +243,59 @@ export default function (server: http.Server | Http2SecureServer) {
 			io.to(room.id).emit("coins", coins)
 		})
 
+		socket.on("game", (state) => {
+			if (!room) return
+			room.game = state
+			io.to(room.id).emit("game", state)
+			if (state === "started") {
+				room.started_at = Date.now()
+				io.to(room.id).emit("start", room.started_at)
+			} else if (state === "ended") {
+				room.ended_at = Date.now()
+				io.to(room.id).emit("time", room.ended_at - room.started_at)
+			}
+		})
+
+		socket.on("ban", (name, banned) => {
+			if (!room) return
+
+			const candidate_player = room.players.find((player) => player.name === name)
+			if (candidate_player) {
+				if (banned) {
+					candidate_player.banned = true
+					sockets[room.id][name]?.emit("ban")
+				} else {
+					candidate_player.banned = false
+				}
+			}
+		})
+
+		socket.on("end", () => {
+			if (!room) return
+			const candidate_player = room.players.find((player) => player.name === socket.data.name)
+			if (!candidate_player) return
+
+			switch (candidate_player.role) {
+				case "seeker":
+					if (room.end_state === "hider") room.end_state = "both"
+					else room.end_state = "seeker"
+					break
+				case "hider":
+					if (room.end_state === "seeker") room.end_state = "both"
+					else room.end_state = "hider"
+					break
+			}
+
+			if (room.end_state === "both") {
+				room.game = "ended"
+				io.to(room.id).emit("game", "ended")
+				room.ended_at = Date.now()
+				io.to(room.id).emit("time", room.ended_at - room.started_at)
+			}
+
+			io.to(room.id).emit("end", room.end_state)
+		})
+
 		socket.on("disconnecting", () => {
 			if (!room) return
 
@@ -266,6 +328,10 @@ type Room = {
 		state: "requested" | "completed" | "confirmed"
 		result?: string
 	}[]
+	game: "undefined" | "started" | "ended" | "aborted"
+	started_at: number
+	ended_at: number
+	end_state: undefined | "hider" | "seeker" | "both"
 }
 
 function random<T>(arr: T[]): T {

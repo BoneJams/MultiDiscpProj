@@ -55,9 +55,29 @@
 	]
 
 	let number_of_dices_str = $state("")
+	let end_state = $state<"hider" | "seeker" | "both">()
+	let started_at = $state(0)
+	let time = $state(0)
+	let hour = $derived(
+		Math.floor(time / 3600000)
+			.toString()
+			.padStart(2, "0")
+	)
+	let minute = $derived(
+		Math.floor((time % 3600000) / 60000)
+			.toString()
+			.padStart(2, "0")
+	)
+	let second = $derived(
+		Math.floor((time % 60000) / 1000)
+			.toString()
+			.padStart(2, "0")
+	)
+	let ms = $derived((time % 1000).toString().padStart(3, "0"))
 
 	const socket: Socket<server_client, client_server> = io()
 
+	let game = $state<"undefined" | "started" | "ended" | "aborted">("undefined")
 	let room_id = $state("")
 	let players = $state<player[]>([])
 	let self_coords = $state<GeolocationCoordinates>()
@@ -164,6 +184,32 @@
 		curse_history.push({ curse, dices, state })
 	})
 
+	socket.on("game", (state) => {
+		console.log(state)
+		game = state
+	})
+
+	socket.on("ban", () => {
+		alert("You have been banned from this room")
+		setTimeout(() => {
+			sessionStorage.clear()
+			location.reload()
+		}, 3000)
+	})
+
+	socket.on("end", (state) => {
+		end_state = state
+	})
+
+	socket.on("start", (ms) => {
+		started_at = ms
+		update_time()
+	})
+
+	socket.on("time", (ms) => {
+		time = ms
+	})
+
 	$effect(() => {
 		untrack(() => {
 			room_id = sessionStorage.getItem("room_id") ?? ""
@@ -218,6 +264,12 @@
 		if (ev instanceof KeyboardEvent && ev.key !== "Enter") return
 		if (!join_id || !join_name) return alert("Please enter a room ID and a name")
 		socket.emit("join", join_id, join_name, join_password, join_admin)
+	}
+
+	function update_time() {
+		if (game !== "started") return
+		requestAnimationFrame(update_time)
+		time = Date.now() - started_at
 	}
 </script>
 
@@ -313,19 +365,36 @@
 	{:else if $page.state.page === "admin"}
 		{@render leave_game_button()}
 
+		<div>{hour}:{minute}:{second}.{ms}</div>
+
 		<div class="text-3xl">Room ID: {room_id}</div>
 
 		<div class="text-3xl">Admin Panel</div>
 
 		<hr class="w-full" />
 
-		<div class="grid grid-cols-2 gap-1">
+		<div class="text-xl">Game</div>
+		<select
+			class="select select-primary select-sm"
+			bind:value={game}
+			onchange={() => socket.emit("game", game)}
+		>
+			<option value="undefined">Not yet started</option>
+			<option value="started">Started</option>
+			<option value="ended">Ended</option>
+			<option value="aborted">Aborted</option>
+		</select>
+
+		<hr class="w-full" />
+
+		<div class="grid grid-cols-3 gap-1">
 			<div>Player</div>
 			<div>Role</div>
+			<div></div>
 			{#each players as player}
-				<div>{player.name}</div>
+				<div class={player.banned ? "text-base-content text-opacity-50" : ""}>{player.name}</div>
 				<select
-					disabled={player.name === join_name || player.name === create_name}
+					disabled={player.name === join_name || player.name === create_name || player.banned}
 					class="select select-primary select-sm"
 					bind:value={player.role}
 					onchange={() => {
@@ -337,6 +406,15 @@
 					<option value="admin">Admin</option>
 					<option value="seeker">Seeker</option>
 					<option value="hider">Hider</option>
+				</select>
+				<select
+					disabled={player.name === join_name || player.name === create_name}
+					class="select select-sm select-primary"
+					bind:value={player.banned}
+					onchange={() => socket.emit("ban", player.name, player.banned)}
+				>
+					<option value={false}>Not banned</option>
+					<option value={true}>Banned</option>
 				</select>
 			{/each}
 		</div>
@@ -376,12 +454,15 @@
 	{:else if $page.state.page === "seeker"}
 		{@render leave_game_button()}
 
+		<div>{hour}:{minute}:{second}.{ms}</div>
+
 		<div class="text-3xl">Seeker</div>
 
 		<div class="text-xl">Radar</div>
 		<div class="grid grid-cols-5 items-center justify-center gap-4">
 			{#each radars as radar}
 				<button
+					disabled={game !== "started"}
 					class="btn btn-primary"
 					onclick={() => {
 						socket.emit("task", radar, "requested")
@@ -394,6 +475,7 @@
 			{#each Object.entries(task_categories) as [task, category]}
 				{#if category !== "radar"}
 					<button
+						disabled={game !== "started"}
 						class="btn btn-primary"
 						onclick={() => {
 							socket.emit("task", task as keyof typeof task_categories, "requested")
@@ -415,9 +497,32 @@
 
 		{@render render_map()}
 
+		<hr class="w-full" />
+
+		{#if end_state === "seeker"}
+			<div>You have signaled that you found hiders. Waiting for the hiders to confirm...</div>
+		{:else if end_state === "hider"}
+			<div>
+				The hiders have signaled that you have found them. Do you want to confirm that you have
+				found the hiders?
+			</div>
+		{:else if end_state === "both"}
+			<div>Both you and hiders have signaled that you have found them.</div>
+		{/if}
+
+		<button
+			class="btn btn-error btn-sm"
+			disabled={game !== "started"}
+			onclick={() => {
+				socket.emit("end")
+			}}>Seekers found hiders</button
+		>
+
 		<!-- * HIDER -->
 	{:else if $page.state.page === "hider"}
 		{@render leave_game_button()}
+
+		<div>{hour}:{minute}:{second}.{ms}</div>
 
 		<div class="text-3xl">Hider</div>
 		<div>You have {coins} coins</div>
@@ -428,8 +533,12 @@
 				type="text"
 				bind:value={number_of_dices_str}
 				class="input input-sm input-primary w-20"
+				onkeydown={(ev) => {
+					if (ev.key === "Enter") socket.emit("dice", number_of_dices_str)
+				}}
 			/>
 			<button
+				disabled={game !== "started"}
 				class="btn btn-primary btn-sm"
 				onclick={() => {
 					socket.emit("dice", number_of_dices_str)
@@ -448,6 +557,29 @@
 		<hr class="w-full" />
 
 		{@render render_map()}
+
+		<hr class="w-full" />
+
+		{#if end_state === "hider"}
+			<div>
+				You have signaled that the seeker have found you. Waiting for the seekers to confirm...
+			</div>
+		{:else if end_state === "seeker"}
+			<div>
+				The seekers have signaled that they have found you. Do you want to confirm that they have
+				found you?
+			</div>
+		{:else if end_state === "both"}
+			<div>Both you and seekers have signaled that they have found you.</div>
+		{/if}
+
+		<button
+			class="btn btn-error btn-sm"
+			disabled={game !== "started"}
+			onclick={() => {
+				socket.emit("end")
+			}}>Seekers found hiders</button
+		>
 	{/if}
 </div>
 
@@ -563,31 +695,33 @@
 		>
 			<TileLayer url={"https://tile.openstreetmap.org/{z}/{x}/{y}.png"} />
 
-			{#each hiders as hider}
-				{#if hider.name !== create_name && hider.name !== join_name}
-					<LayerGroup>
-						<Marker
-							latLng={[hider.coords.latitude, hider.coords.longitude]}
-							options={{ icon: blueIcon }}
-						>
-							<Popup options={{ content: `Hider: ${hider.name}` }}></Popup>
-						</Marker>
-					</LayerGroup>
-				{/if}
-			{/each}
+			{#if game === "started"}
+				{#each hiders as hider}
+					{#if hider.name !== create_name && hider.name !== join_name}
+						<LayerGroup>
+							<Marker
+								latLng={[hider.coords.latitude, hider.coords.longitude]}
+								options={{ icon: blueIcon }}
+							>
+								<Popup options={{ content: `Hider: ${hider.name}` }}></Popup>
+							</Marker>
+						</LayerGroup>
+					{/if}
+				{/each}
 
-			{#each seekers as seeker}
-				{#if seeker.name !== create_name && seeker.name !== join_name}
-					<LayerGroup>
-						<Marker
-							latLng={[seeker.coords.latitude, seeker.coords.longitude]}
-							options={{ icon: redIcon }}
-						>
-							<Popup options={{ content: `Seeker: ${seeker.name}` }}></Popup>
-						</Marker>
-					</LayerGroup>
-				{/if}
-			{/each}
+				{#each seekers as seeker}
+					{#if seeker.name !== create_name && seeker.name !== join_name}
+						<LayerGroup>
+							<Marker
+								latLng={[seeker.coords.latitude, seeker.coords.longitude]}
+								options={{ icon: redIcon }}
+							>
+								<Popup options={{ content: `Seeker: ${seeker.name}` }}></Popup>
+							</Marker>
+						</LayerGroup>
+					{/if}
+				{/each}
+			{/if}
 
 			{#if self_coords}
 				<LayerGroup>

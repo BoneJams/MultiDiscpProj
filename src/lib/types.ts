@@ -12,6 +12,9 @@ export interface client_server {
 		state: "requested" | "completed" | "confirmed"
 	): void
 	"gps"(coords: GeolocationCoordinates): void
+	"game"(state: "undefined" | "started" | "ended" | "aborted"): void
+	"ban"(name: string, banned: boolean): void
+	"end"(): void
 
 	"coins"(coins: number): void
 }
@@ -34,6 +37,12 @@ export interface server_client {
 		persist?: true
 	): void
 	"gps"(name: string, coords: GeolocationCoordinates, hider?: true): void
+	"game"(state: "undefined" | "started" | "ended" | "aborted"): void
+	"ban"(): void
+	"end"(state: undefined | "hider" | "seeker" | "both"): void
+	"start"(ms: number): void
+	"time"(ms: number): void
+
 	"error"(error: string): void
 }
 
@@ -44,4 +53,5 @@ export interface data {
 export type player = {
 	name: string
 	role?: "admin" | "seeker" | "hider"
+	banned: boolean
 }
