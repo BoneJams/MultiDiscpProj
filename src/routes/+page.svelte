@@ -158,6 +158,7 @@
 	})
 
 	socket.on("started", (ms) => {
+		ended_at = undefined
 		started_at = ms
 		update_time()
 	})
@@ -520,6 +521,7 @@
 			</div>
 		{/if}
 		<button
+			disabled={game !== "ingame"}
 			class="btn btn-error btn-sm"
 			onclick={() => {
 				socket.emit("found")

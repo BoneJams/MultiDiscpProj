@@ -33,8 +33,6 @@ export default function (server: http.Server | Http2SecureServer) {
 				curses: [],
 				tasks: [],
 				game: "waiting",
-				started_at: 0,
-				ended_at: 0,
 				found: "none"
 			})
 
@@ -171,7 +169,7 @@ export default function (server: http.Server | Http2SecureServer) {
 				room.tasks.push(new_task)
 				room.coins += category_coins[task_categories[task.task]]
 
-				io.to(room.id).emit("task", task, true)
+				io.to(room.id).emit("task", new_task, true)
 				io.to(room.id).emit("coins", room.coins)
 			} else {
 				io.to(room.id).emit("task", task)
@@ -247,6 +245,7 @@ export default function (server: http.Server | Http2SecureServer) {
 			io.to(room.id).emit("game", state)
 			if (state === "ingame") {
 				room.started_at = Date.now()
+				room.ended_at = undefined
 				io.to(room.id).emit("started", room.started_at)
 				room.players.forEach((player) => {
 					if (!room) return
