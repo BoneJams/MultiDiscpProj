@@ -465,6 +465,7 @@
 			<div>Number of dices:</div>
 			<input
 				type="text"
+				inputmode="numeric"
 				bind:value={number_of_dices_str}
 				class="input input-sm input-primary w-20"
 				onkeydown={(ev) => {
@@ -517,7 +518,12 @@
 				Hiders have confirmed that seekers have found hiders. Waiting for seekers to confirm...
 			</div>
 		{/if}
-		<button class="btn btn-error btn-sm">Confirms that seekers have found hiders</button>
+		<button
+			class="btn btn-error btn-sm"
+			onclick={() => {
+				socket.emit("found")
+			}}>Confirms that seekers have found hiders</button
+		>
 
 		<hr class="w-full" />
 	{/if}
