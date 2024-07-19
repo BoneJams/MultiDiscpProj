@@ -164,6 +164,7 @@
 
 	socket.on("ended", (ms) => {
 		ended_at = ms
+		time = ended_at - (started_at ?? 0)
 	})
 
 	// * $EFFECTS
