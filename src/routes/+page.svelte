@@ -2,62 +2,34 @@
 	import { pushState } from "$app/navigation"
 	import { page } from "$app/stores"
 	import {
+		black_icon,
+		blue_icon,
+		green_icon,
+		red_icon,
+		socket,
+		yellow_icon
+	} from "$lib/client/const"
+	import {
 		curse_names,
 		dice_curses,
+		radars,
 		task_categories,
 		task_descriptions,
 		task_names
 	} from "$lib/const"
-	import type { client_server, player, server_client } from "$lib/types"
-	import { Icon } from "leaflet"
-	import { io, type Socket } from "socket.io-client"
-	import { LayerGroup, Map, Marker, Popup, TileLayer } from "sveaflet"
+	import type { found_state, game_state, player, task } from "$lib/types"
+	import { Circle, LayerGroup, Map, Marker, Popup, TileLayer } from "sveaflet"
 	import { untrack } from "svelte"
 
-	let greenIcon = new Icon({
-		iconUrl: "/img/marker-icon-green.png",
-		shadowUrl: "/img/marker-shadow.png",
-		iconSize: [25, 41],
-		iconAnchor: [12, 41],
-		popupAnchor: [1, -34],
-		shadowSize: [41, 41]
-	})
-
-	let redIcon = new Icon({
-		iconUrl: "/img/marker-icon-red.png",
-		shadowUrl: "/img/marker-shadow.png",
-		iconSize: [25, 41],
-		iconAnchor: [12, 41],
-		popupAnchor: [1, -34],
-		shadowSize: [41, 41]
-	})
-
-	let blueIcon = new Icon({
-		iconUrl: "/img/marker-icon-blue.png",
-		shadowUrl: "/img/marker-shadow.png",
-		iconSize: [25, 41],
-		iconAnchor: [12, 41],
-		popupAnchor: [1, -34],
-		shadowSize: [41, 41]
-	})
-
-	const radars: (keyof typeof task_categories)[] = [
-		"radar5",
-		"radar10",
-		"radar25",
-		"radar50",
-		"radar100",
-		"radar200",
-		"radar500",
-		"radar1000",
-		"radar2000",
-		"radar5000"
-	]
+	// * STATES
 
 	let number_of_dices_str = $state("")
-	let end_state = $state<"hider" | "seeker" | "both">()
-	let started_at = $state(0)
+
+	let started_at = $state<number>()
+	let ended_at = $state<number>()
+
 	let time = $state(0)
+
 	let hour = $derived(
 		Math.floor(time / 3600000)
 			.toString()
@@ -75,23 +47,18 @@
 	)
 	let ms = $derived((time % 1000).toString().padStart(3, "0"))
 
-	const socket: Socket<server_client, client_server> = io()
+	let found = $state<found_state>("none")
 
-	let game = $state<"undefined" | "started" | "ended" | "aborted">("undefined")
+	let game = $state<game_state>("waiting")
 	let room_id = $state("")
 	let players = $state<player[]>([])
-	let self_coords = $state<GeolocationCoordinates>()
-	let hiders = $state<{ name: string; coords: GeolocationCoordinates }[]>([])
-	let seekers = $state<{ name: string; coords: GeolocationCoordinates }[]>([])
+
+	let self_coords = $state<{ latitude: number; longitude: number }>()
+	let map_center = $state({ latitude: 11.107654906837048, longitude: 106.61411702472978 })
+
 	let coins = $state(0)
-	let task_history = $state<
-		{
-			task: keyof typeof task_categories
-			state: "requested" | "completed" | "confirmed"
-			result?: string
-		}[]
-	>([])
-	let curse_history = $state<
+	let tasks = $state<task[]>([])
+	let curses = $state<
 		{
 			curse: keyof typeof dice_curses
 			dices: number[]
@@ -107,6 +74,8 @@
 	let join_name = $state("")
 	let join_admin = $state(false)
 	let join_password = $state("")
+
+	// * SOCKET
 
 	socket.on("create", (id) => {
 		socket.emit("join", id, create_name, create_admin_password, true)
@@ -158,38 +127,25 @@
 		}
 	})
 
-	socket.on("gps", (name, coords, is_hider) => {
-		if (is_hider) {
-			const hider = hiders.find((hider) => hider.name === name)
-			if (hider) hider.coords = coords
-			else hiders.push({ name, coords })
-		} else {
-			const seeker = seekers.find((seeker) => seeker.name === name)
-			if (seeker) seeker.coords = coords
-			else seekers.push({ name, coords })
-		}
-	})
-
 	socket.on("coins", (new_coins) => {
 		coins = new_coins
 	})
 
-	socket.on("task", (task, state, result, persist) => {
-		if (state !== "requested" && !persist) task_history.pop()
-		task_history.push({ task, state, result })
+	socket.on("task", (task, new_task) => {
+		if (task.state !== "requested" && !new_task) tasks.pop()
+		tasks.push(task)
 	})
 
-	socket.on("curse", (curse, dices, state, persist) => {
-		if (state !== "requested" && !persist) curse_history.pop()
-		curse_history.push({ curse, dices, state })
+	socket.on("curse", (curse, new_curse) => {
+		if (curse.state !== "requested" && !new_curse) curses.pop()
+		curses.push(curse)
 	})
 
 	socket.on("game", (state) => {
-		console.log(state)
 		game = state
 	})
 
-	socket.on("ban", () => {
+	socket.on("banned", () => {
 		alert("You have been banned from this room")
 		setTimeout(() => {
 			sessionStorage.clear()
@@ -197,18 +153,20 @@
 		}, 3000)
 	})
 
-	socket.on("end", (state) => {
-		end_state = state
+	socket.on("found", (state) => {
+		found = state
 	})
 
-	socket.on("start", (ms) => {
+	socket.on("started", (ms) => {
 		started_at = ms
 		update_time()
 	})
 
-	socket.on("time", (ms) => {
-		time = ms
+	socket.on("ended", (ms) => {
+		ended_at = ms
 	})
+
+	// * $EFFECTS
 
 	$effect(() => {
 		untrack(() => {
@@ -230,11 +188,15 @@
 
 			navigator.geolocation.watchPosition(
 				(position) => {
+					if (!self_coords) map_center = position.coords
 					self_coords = position.coords
 					socket.emit("gps", position.coords)
 				},
 				(e) => {
 					console.log(e)
+					alert(
+						"GPS is not available. Please make sure you have allow location access. If it still does not work, please try refreshing the page. If it still does not work, please use another device, preferably a mobile phone."
+					)
 				},
 				{ enableHighAccuracy: true, maximumAge: 0, timeout: 10000 }
 			)
@@ -254,6 +216,8 @@
 		sessionStorage.setItem("join_password", join_password)
 	})
 
+	// * FUNCTIONS
+
 	function create(ev: KeyboardEvent | MouseEvent) {
 		if (ev instanceof KeyboardEvent && ev.key !== "Enter") return
 		if (!create_name) return alert("Please enter a name")
@@ -267,9 +231,9 @@
 	}
 
 	function update_time() {
-		if (game !== "started") return
+		if (game !== "ingame") return
 		requestAnimationFrame(update_time)
-		time = Date.now() - started_at
+		time = (ended_at ?? Date.now()) - (started_at ?? Date.now())
 	}
 </script>
 
@@ -362,6 +326,14 @@
 
 		<!-- * ADMIN -->
 	{:else if $page.state.page === "admin"}
+		{@const hider_coords = players
+			.filter((player) => player.role === "hider" && !player.disconnected)
+			.map((player) => player.coords)
+			.filter((coords) => coords !== undefined)}
+		{@const seeker_coords = players
+			.filter((player) => player.role === "seeker" && !player.disconnected)
+			.map((player) => player.coords)
+			.filter((coords) => coords !== undefined)}
 		{@render leave_game_button()}
 
 		<div>{hour}:{minute}:{second}.{ms}</div>
@@ -373,13 +345,17 @@
 		<hr class="w-full" />
 
 		<div class="text-xl">Game</div>
+		{#if !hider_coords.length || !seeker_coords.length}
+			<div>The system has not receive the gps of at least one seeker and at least one hider.</div>
+		{/if}
 		<select
+			disabled={!hider_coords.length || !seeker_coords.length}
 			class="select select-primary select-sm"
 			bind:value={game}
 			onchange={() => socket.emit("game", game)}
 		>
-			<option value="undefined">Not yet started</option>
-			<option value="started">Started</option>
+			<option value="waiting">Not In Game (Not Started Yet)</option>
+			<option value="ingame">In Game (Started)</option>
 			<option value="ended">Ended</option>
 			<option value="aborted">Aborted</option>
 		</select>
@@ -396,12 +372,9 @@
 					disabled={player.name === join_name || player.name === create_name || player.banned}
 					class="select select-primary select-sm"
 					bind:value={player.role}
-					onchange={() => {
-						if (!player.role) return
-						socket.emit("role", player.name, player.role)
-					}}
+					onchange={() => socket.emit("players", players)}
 				>
-					<option value={undefined}>Select Role...</option>
+					<option value="none">Select Role...</option>
 					<option value="admin">Admin</option>
 					<option value="seeker">Seeker</option>
 					<option value="hider">Hider</option>
@@ -410,7 +383,7 @@
 					disabled={player.name === join_name || player.name === create_name}
 					class="select select-sm select-primary"
 					bind:value={player.banned}
-					onchange={() => socket.emit("ban", player.name, player.banned)}
+					onchange={() => socket.emit("players", players)}
 				>
 					<option value={false}>Not banned</option>
 					<option value={true}>Banned</option>
@@ -437,17 +410,7 @@
 			>
 		</div>
 
-		<hr class="w-full" />
-
-		{@render render_task_history("admin")}
-
-		<hr class="w-full" />
-
-		{@render render_curse_history("admin")}
-
-		<hr class="w-full" />
-
-		{@render render_map()}
+		{@render render("admin")}
 
 		<!-- * SEEKER -->
 	{:else if $page.state.page === "seeker"}
@@ -461,10 +424,10 @@
 		<div class="grid grid-cols-5 items-center justify-center gap-4">
 			{#each radars as radar}
 				<button
-					disabled={game !== "started"}
+					disabled={game !== "ingame"}
 					class="btn btn-primary"
 					onclick={() => {
-						socket.emit("task", radar, "requested")
+						socket.emit("task", { task: radar, state: "requested" })
 					}}>{task_names[radar]}</button
 				>
 			{/each}
@@ -474,48 +437,20 @@
 			{#each Object.entries(task_categories) as [task, category]}
 				{#if category !== "radar"}
 					<button
-						disabled={game !== "started"}
+						disabled={game !== "ingame"}
 						class="btn btn-primary"
 						onclick={() => {
-							socket.emit("task", task as keyof typeof task_categories, "requested")
+							socket.emit("task", {
+								task: task as keyof typeof task_categories,
+								state: "requested"
+							})
 						}}>{task_names[task as keyof typeof task_categories]}</button
 					>
 				{/if}
 			{/each}
 		</div>
 
-		<hr class="w-full" />
-
-		{@render render_task_history("seeker")}
-
-		<hr class="w-full" />
-
-		{@render render_curse_history("seeker")}
-
-		<hr class="w-full" />
-
-		{@render render_map()}
-
-		<hr class="w-full" />
-
-		{#if end_state === "seeker"}
-			<div>You have signaled that you found hiders. Waiting for the hiders to confirm...</div>
-		{:else if end_state === "hider"}
-			<div>
-				The hiders have signaled that you have found them. Do you want to confirm that you have
-				found the hiders?
-			</div>
-		{:else if end_state === "both"}
-			<div>Both you and hiders have signaled that you have found them.</div>
-		{/if}
-
-		<button
-			class="btn btn-error btn-sm"
-			disabled={game !== "started"}
-			onclick={() => {
-				socket.emit("end")
-			}}>Seekers found hiders</button
-		>
+		{@render render("seeker")}
 
 		<!-- * HIDER -->
 	{:else if $page.state.page === "hider"}
@@ -537,7 +472,7 @@
 				}}
 			/>
 			<button
-				disabled={game !== "started"}
+				disabled={game !== "ingame"}
 				class="btn btn-primary btn-sm"
 				onclick={() => {
 					socket.emit("dice", number_of_dices_str)
@@ -545,51 +480,60 @@
 			>
 		</div>
 
-		<hr class="w-full" />
-
-		{@render render_task_history("hider")}
-
-		<hr class="w-full" />
-
-		{@render render_curse_history("hider")}
-
-		<hr class="w-full" />
-
-		{@render render_map()}
-
-		<hr class="w-full" />
-
-		{#if end_state === "hider"}
-			<div>
-				You have signaled that the seeker have found you. Waiting for the seekers to confirm...
-			</div>
-		{:else if end_state === "seeker"}
-			<div>
-				The seekers have signaled that they have found you. Do you want to confirm that they have
-				found you?
-			</div>
-		{:else if end_state === "both"}
-			<div>Both you and seekers have signaled that they have found you.</div>
-		{/if}
-
-		<button
-			class="btn btn-error btn-sm"
-			disabled={game !== "started"}
-			onclick={() => {
-				socket.emit("end")
-			}}>Seekers found hiders</button
-		>
+		{@render render("hider")}
 	{/if}
 </div>
 
 {#snippet leave_game_button()}
 	<button
-		class="btn btn-error btn-sm fixed top-0 left-0 m-1"
+		class=""
 		onclick={() => {
 			sessionStorage.clear()
 			location.reload()
 		}}>Leave Game</button
 	>
+{/snippet}
+
+{#snippet render(role: "admin" | "seeker" | "hider")}
+	<hr class="w-full" />
+
+	{@render render_task_history(role)}
+
+	<hr class="w-full" />
+
+	{@render render_curse_history(role)}
+
+	<hr class="w-full" />
+
+	{#if role !== "admin"}
+		{#if found === "both"}
+			<div>Both seekers and hiders have confirmed that seekers have found hiders.</div>
+		{:else if found === "seeker"}
+			<div>
+				Seekers have confirmed that seekers have found hiders. Waiting for hiders to confirm...
+			</div>
+		{:else if found === "hider"}
+			<div>
+				Hiders have confirmed that seekers have found hiders. Waiting for seekers to confirm...
+			</div>
+		{/if}
+		<button class="btn btn-error btn-sm">Confirms that seekers have found hiders</button>
+
+		<hr class="w-full" />
+	{/if}
+
+	<button
+		class="btn btn-primary btn-sm"
+		disabled={!self_coords}
+		onclick={() => {
+			if (self_coords) {
+				map_center = { latitude: 11.107654906837048, longitude: 106.61411702472978 }
+				map_center = self_coords
+			}
+		}}>Re-center map (to your location)</button
+	>
+
+	{@render render_map()}
 {/snippet}
 
 {#snippet render_curse_history(role: "admin" | "seeker" | "hider")}
@@ -600,7 +544,7 @@
 		<div>Curse</div>
 		<div>State</div>
 		<div>Result</div>
-		{#each curse_history as curse}
+		{#each curses as curse}
 			<div>{curse.dices.join(", ")}</div>
 			<div>{curse_names[dice_curses[curse.curse]]}</div>
 			<div
@@ -620,18 +564,17 @@
 					<button
 						class="btn btn-primary btn-sm btn-error"
 						onclick={() => {
-							socket.emit("curse", curse.curse, curse.dices, "completed")
-						}}>Mark as completed</button
+							socket.emit("curse", { ...curse, state: "completed" })
+						}}>Mark the curse as completed</button
 					>
 				{/if}
 				{#if (role === "hider" || role === "admin") && curse.state === "completed"}
 					<button
 						class="btn btn-primary btn-sm btn-error"
 						onclick={() => {
-							socket.emit("curse", curse.curse, curse.dices, "confirmed")
-						}}
-						>Mark as confirmed
-					</button>
+							socket.emit("curse", { ...curse, state: "confirmed" })
+						}}>Confirm the curse is completed</button
+					>
 				{/if}
 			</div>
 		{/each}
@@ -645,7 +588,7 @@
 		<div>Task</div>
 		<div>State</div>
 		<div>Result</div>
-		{#each task_history as task}
+		{#each tasks as task}
 			<div>{task_names[task.task]} ({task_descriptions[task.task]})</div>
 			<div
 				class={task.state === "requested"
@@ -663,8 +606,8 @@
 					<button
 						class="btn btn-primary btn-sm btn-error"
 						onclick={() => {
-							socket.emit("task", task.task, "completed")
-						}}>Mark as completed</button
+							socket.emit("task", { ...task, state: "completed" })
+						}}>Mark the task as completed</button
 					>
 				{/if}
 
@@ -672,8 +615,8 @@
 					<button
 						class="btn btn-primary btn-sm btn-error"
 						onclick={() => {
-							socket.emit("task", task.task, "confirmed")
-						}}>Mark as confirmed</button
+							socket.emit("task", { ...task, state: "confirmed" })
+						}}>Confirm the task is completed</button
 					>
 				{/if}
 
@@ -689,52 +632,89 @@
 	<div class="w-full aspect-video">
 		<Map
 			options={{
-				center: [
-					self_coords?.latitude ?? 11.107654906837048,
-					self_coords?.longitude ?? 106.61411702472978
-				],
+				center: [map_center.latitude, map_center.longitude],
 				zoom: 14
 			}}
 		>
 			<TileLayer url={"https://tile.openstreetmap.org/{z}/{x}/{y}.png"} />
 
-			{#if game === "started"}
-				{#each hiders as hider}
-					{#if hider.name !== create_name && hider.name !== join_name}
+			{#if game === "ingame"}
+				{@const self_name = create_name || join_name}
+				{@const self_role = players.find((player) => player.name === self_name)?.role}
+				{#each players as player}
+					{@const can_see =
+						// * Admin can see all players.
+						self_role === "admin" ||
+						// * Seeker can see hiders and seekers.
+						(self_role === "hider" && (player.role === "hider" || player.role === "seeker")) ||
+						// * Seeker can see seekers only.
+						(self_role === "seeker" && player.role === "seeker")}
+					{#if player.coords && self_name !== player.name && can_see && player.role !== "none"}
 						<LayerGroup>
 							<Marker
-								latLng={[hider.coords.latitude, hider.coords.longitude]}
-								options={{ icon: blueIcon }}
+								latLng={[player.coords.latitude, player.coords.longitude]}
+								options={{
+									icon: player.disconnected
+										? black_icon
+										: player.role === "admin"
+											? yellow_icon
+											: player.role === "seeker"
+												? red_icon
+												: player.role === "hider"
+													? blue_icon
+													: undefined
+								}}
 							>
-								<Popup options={{ content: `Hider: ${hider.name}` }}></Popup>
+								<Popup options={{ content: `${player.role}: ${player.name}` }}></Popup>
 							</Marker>
 						</LayerGroup>
-					{/if}
-				{/each}
 
-				{#each seekers as seeker}
-					{#if seeker.name !== create_name && seeker.name !== join_name}
-						<LayerGroup>
-							<Marker
-								latLng={[seeker.coords.latitude, seeker.coords.longitude]}
-								options={{ icon: redIcon }}
-							>
-								<Popup options={{ content: `Seeker: ${seeker.name}` }}></Popup>
-							</Marker>
-						</LayerGroup>
+						{#if player.role === "hider" && player.start_coords}
+							<LayerGroup>
+								<Circle
+									latLng={[player.start_coords.latitude, player.start_coords.longitude]}
+									options={{
+										color: "blue",
+										fillColor: "#2A81CB",
+										fillOpacity: 0.1,
+										radius: 1000
+									}}
+								></Circle>
+							</LayerGroup>
+						{/if}
 					{/if}
 				{/each}
 			{/if}
 
 			{#if self_coords}
+				{@const self_name = create_name || join_name}
+				{@const self_role = players.find((player) => player.name === self_name)?.role}
+				{@const self_start_coords = players.find(
+					(player) => player.name === self_name
+				)?.start_coords}
+
 				<LayerGroup>
 					<Marker
 						latLng={[self_coords.latitude, self_coords.longitude]}
-						options={{ icon: greenIcon }}
+						options={{ icon: green_icon }}
 					>
 						<Popup options={{ content: "You" }}></Popup>
 					</Marker>
 				</LayerGroup>
+
+				{#if self_role === "hider" && self_start_coords}
+					<LayerGroup>
+						<Circle
+							latLng={[self_start_coords.latitude, self_start_coords.longitude]}
+							options={{
+								color: "green",
+								fillColor: "#2AAD27",
+								fillOpacity: 0.1,
+								radius: 1000
+							}}
+						></Circle>
+					</LayerGroup>
+				{/if}
 			{/if}
 		</Map>
 	</div>

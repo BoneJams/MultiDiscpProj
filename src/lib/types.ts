@@ -3,45 +3,40 @@ import type { dice_curses, task_categories } from "./const"
 export interface client_server {
 	"create"(player_name: string, room_password: string, admin_password: string): void
 	"join"(room_id: string, player_name: string, password: string, admin: boolean): void
-	"role"(name: string, role: "admin" | "seeker" | "hider"): void
-	"task"(task: keyof typeof task_categories, state: "requested" | "completed" | "confirmed"): void
-	"dice"(number_of_dices: string): void
-	"curse"(
-		curse: keyof typeof dice_curses,
-		dices: number[],
-		state: "requested" | "completed" | "confirmed"
-	): void
-	"gps"(coords: GeolocationCoordinates): void
-	"game"(state: "undefined" | "started" | "ended" | "aborted"): void
-	"ban"(name: string, banned: boolean): void
-	"end"(): void
 
+	"players"(players: player[]): void
 	"coins"(coins: number): void
+
+	"task"(task: task): void
+
+	"dice"(number_of_dices: string): void
+
+	"curse"(curse: curse): void
+
+	"game"(state: game_state): void
+	"found"(): void
+
+	"gps"(coords: GeolocationCoordinates): void
 }
 
 export interface server_client {
 	"create"(room_id: string): void
 	"join"(room_id: string): void
+
 	"players"(players: player[]): void
 	"coins"(coins: number): void
-	"task"(
-		task: keyof typeof task_categories,
-		state: "requested" | "completed" | "confirmed",
-		result?: string,
-		persist?: true
-	): void
-	"curse"(
-		curse: keyof typeof dice_curses,
-		dices: number[],
-		state: "requested" | "completed" | "confirmed",
-		persist?: true
-	): void
-	"gps"(name: string, coords: GeolocationCoordinates, hider?: true): void
-	"game"(state: "undefined" | "started" | "ended" | "aborted"): void
-	"ban"(): void
-	"end"(state: undefined | "hider" | "seeker" | "both"): void
-	"start"(ms: number): void
-	"time"(ms: number): void
+
+	"task"(task: task, new_task?: true): void
+	"curse"(curse: curse, new_curse?: true): void
+
+	"game"(state: game_state): void
+
+	"banned"(): void
+
+	"found"(state: found_state): void
+
+	"started"(started_at: number): void
+	"ended"(ended_at: number): void
 
 	"error"(error: string): void
 }
@@ -52,6 +47,42 @@ export interface data {
 
 export type player = {
 	name: string
-	role?: "admin" | "seeker" | "hider"
+	role: "none" | "admin" | "seeker" | "hider"
 	banned: boolean
+	coords?: GeolocationCoordinates
+	start_coords?: GeolocationCoordinates
+	disconnected: boolean
+}
+
+export type valueof<T> = T[keyof T]
+
+export type task = {
+	task: keyof typeof task_categories
+	state: "requested" | "completed" | "confirmed"
+	result?: string
+}
+export type curse = {
+	dices: number[]
+	curse: keyof typeof dice_curses
+	state: "requested" | "completed" | "confirmed"
+}
+
+export type game_state = "waiting" | "ingame" | "ended" | "aborted"
+export type found_state = "none" | "hider" | "seeker" | "both"
+
+export type Room = {
+	id: string
+	room_password: string
+	admin_password: string
+	players: player[]
+	coins: number
+
+	tasks: task[]
+	curses: curse[]
+
+	game: game_state
+	found: found_state
+
+	started_at?: number
+	ended_at?: number
 }

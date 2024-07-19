@@ -7,9 +7,10 @@ import {
 	radar_meters,
 	radars,
 	task_categories,
+	task_names,
 	type dice_curses
-} from "./const"
-import type { client_server, data, player, server_client } from "./types"
+} from "../const"
+import type { client_server, curse, data, Room, server_client, task } from "../types"
 
 export default function (server: http.Server | Http2SecureServer) {
 	const io = new Server<client_server, server_client, Record<string, never>, data>(server)
@@ -27,14 +28,14 @@ export default function (server: http.Server | Http2SecureServer) {
 				id,
 				room_password,
 				admin_password,
-				players: [{ name, role: "admin", banned: false }],
+				players: [{ name, role: "admin", banned: false, disconnected: false }],
 				coins: 0,
 				curses: [],
 				tasks: [],
-				game: "undefined",
+				game: "waiting",
 				started_at: 0,
 				ended_at: 0,
-				end_state: undefined
+				found: "none"
 			})
 
 			socket.emit("create", id)
@@ -49,14 +50,12 @@ export default function (server: http.Server | Http2SecureServer) {
 				return
 			}
 
-			room = candidate_room
-
-			if (password !== (admin ? room.admin_password : room.room_password))
+			if (password !== (admin ? candidate_room.admin_password : candidate_room.room_password))
 				return socket.emit("error", "Wrong password")
 
-			const candidate_player = room.players.find((player) => player.name === name)
+			let candidate_player = candidate_room.players.find((player) => player.name === name)
 
-			if (candidate_player && candidate_player.banned) return socket.emit("ban")
+			if (candidate_player && candidate_player.banned) return socket.emit("banned")
 
 			if (candidate_player) {
 				if (candidate_player.role === "admin" && !admin)
@@ -70,57 +69,37 @@ export default function (server: http.Server | Http2SecureServer) {
 						"If you are an admin, please choose another name. If you are not an admin, turn off join as admin."
 					)
 
-				switch (candidate_player.role) {
-					case "admin":
-						socket.join(`${room.id}-admin`)
-						break
-					case "seeker":
-						socket.join(`${room.id}-seeker`)
-						break
-					case "hider":
-						socket.join(`${room.id}-hider`)
-						break
-				}
+				candidate_player.disconnected = false
 			} else {
-				room.players.push({ role: admin ? "admin" : undefined, name, banned: false })
+				candidate_player = {
+					role: admin ? "admin" : "none",
+					name,
+					banned: false,
+					disconnected: false
+				}
+				candidate_room.players.push(candidate_player)
 			}
 
-			socket.emit("join", room_id)
+			// * Passed all checks, join the room
+
+			room = candidate_room
 			socket.join(room_id)
+			socket.emit("join", room_id)
+
 			socket.data.name = name
-
-			io.to(room_id).emit("players", room.players)
-
-			socket.emit("coins", room.coins)
-
-			room.curses.forEach(
-				(curse) => socket.emit("curse", curse.curse, curse.dices, curse.state),
-				true
-			)
-			room.tasks.forEach((task) => socket.emit("task", task.task, task.state), true)
-			socket.emit("game", room.game)
-
-			if (room.seeker && room.seeker_coords) socket.emit("gps", room.seeker, room.seeker_coords)
-
-			if (room.game === "started") socket.emit("start", room.started_at)
-
 			sockets[room_id][name] = socket
-
 			connected_clients[parseInt(room_id)] += 1
-		})
 
-		socket.on("role", (name, role) => {
-			if (!room) return
+			// * Sync room data to the client
+			socket.emit("coins", room.coins)
+			room.tasks.forEach((task) => socket.emit("task", task, true))
+			room.curses.forEach((curse) => socket.emit("curse", curse, true))
+			socket.emit("game", room.game)
+			if (room.started_at) socket.emit("started", room.started_at)
+			if (room.ended_at) socket.emit("ended", room.ended_at)
 
-			const candidate_player = room.players.find((player) => player.name === name)
-			if (!candidate_player) return
-
-			sockets[room.id]?.[name]?.leave(`${room.id}-${candidate_player.role}`)
-			sockets[room.id]?.[name]?.join(`${room.id}-${role}`)
-
-			candidate_player.role = role
-
-			io.to(room.id).emit("players", room.players)
+			// * Sync room data to all clients
+			io.to(room_id).emit("players", room.players)
 		})
 
 		socket.on("gps", (coords) => {
@@ -130,62 +109,78 @@ export default function (server: http.Server | Http2SecureServer) {
 
 			if (!candidate_player) return
 
-			switch (candidate_player.role) {
-				case "seeker":
-					room.seeker = socket.data.name
-					room.seeker_coords = coords
-					io.to(room.id).emit("gps", socket.data.name, coords)
-					break
-				case "hider":
-					room.hider_coords = coords
-					io.to(`${room.id}-admin`).emit("gps", socket.data.name, coords, true)
-					io.to(`${room.id}-hider`).emit("gps", socket.data.name, coords, true)
-					break
-			}
+			candidate_player.coords = coords
+
+			io.to(room.id).emit("players", room.players)
 		})
 
-		socket.on("task", (task, state) => {
+		socket.on("task", (task) => {
 			if (!room) return
 
-			if (state === "requested" && room.curses.some((curse) => curse.state !== "confirmed")) {
+			if (task.state === "requested" && room.curses.some((curse) => curse.state !== "confirmed")) {
 				return socket.emit(
 					"error",
 					"You need to complete all your curses first before you can send tasks"
 				)
 			}
 
-			if (state === "requested" && room.tasks.some((task) => task.state !== "confirmed")) {
+			if (task.state === "requested" && room.tasks.some((task) => task.state !== "confirmed")) {
 				return socket.emit("error", "You can only send one task at a time")
 			}
 
-			if (radars.includes(task as (typeof radars)[number])) {
-				if (!room.hider_coords || !room.seeker_coords)
-					return socket.emit("error", "Hider or Seeker not found")
+			if (room.tasks.some((_task) => task.task === _task.task))
+				return socket.emit("error", "You cannot request the same task more than once")
 
-				const distance = measure(room.hider_coords, room.seeker_coords)
+			if (radars.includes(task.task as (typeof radars)[number])) {
+				const seeker_coords = room.players.find(
+					(player) => player.name === socket.data.name
+				)?.coords
 
-				io.to(room.id).emit(
-					"task",
-					task,
-					"confirmed",
-					distance < radar_meters[task as (typeof radars)[number]] ? "inside" : "outside",
-					true
-				)
+				if (!seeker_coords)
+					return socket.emit(
+						"error",
+						"The system has not receive your gps. Please try again later."
+					)
 
-				room.coins += category_coins[task_categories[task]]
-				io.to(room.id).emit("coins", room.coins)
+				const hiders_coords = room.players
+					.filter((player) => player.role === "hider" && !player.disconnected)
+					.map((player) => player.coords)
+					.filter((coords) => coords !== undefined)
 
-				room.tasks.push({
-					task,
+				if (!hiders_coords.length)
+					return socket.emit(
+						"error",
+						"The system has not receive the gps of at least one hider. Please try again later."
+					)
+
+				let inside = 0
+
+				for (const hider_coords of hiders_coords) {
+					const distance = measure(hider_coords, seeker_coords)
+					if (distance < radar_meters[task.task as (typeof radars)[number]]) {
+						inside += 1
+					}
+				}
+
+				const new_task: task = {
+					task: task.task,
 					state: "confirmed",
-					result: distance < radar_meters[task as (typeof radars)[number]] ? "inside" : "outside"
-				})
+					result: `${inside} hiders are inside the seeker ${socket.data.name}'s ${task_names[task.task]}`
+				}
+
+				room.tasks.push(new_task)
+				room.coins += category_coins[task_categories[task.task]]
+
+				io.to(room.id).emit("task", task, true)
+				io.to(room.id).emit("coins", room.coins)
 			} else {
-				io.to(room.id).emit("task", task, state)
-				if (state !== "requested") room.tasks.pop()
-				room.tasks.push({ task, state })
-				if (state === "confirmed") {
-					room.coins += category_coins[task_categories[task]]
+				io.to(room.id).emit("task", task)
+
+				if (task.state !== "requested") room.tasks.pop()
+				room.tasks.push(task)
+
+				if (task.state === "confirmed") {
+					room.coins += category_coins[task_categories[task.task]]
 					io.to(room.id).emit("coins", room.coins)
 				}
 			}
@@ -201,7 +196,7 @@ export default function (server: http.Server | Http2SecureServer) {
 			if (number_of_dices * dice_coins > room.coins) {
 				return socket.emit(
 					"error",
-					`You do not have enough coins to roll that many dices. The maximum dices you can roll is ${Math.floor(room.coins / dice_coins)}`
+					`You do not have enough coins to roll that many dices (1 dice cost 50 coins). The maximum dices you can roll is ${Math.floor(room.coins / dice_coins)}`
 				)
 			}
 
@@ -224,17 +219,20 @@ export default function (server: http.Server | Http2SecureServer) {
 				raw += dice
 			}
 			const curse = raw > 24 ? 24 : (raw as keyof typeof dice_curses)
-			io.to(room.id).emit("curse", curse, dices, "requested")
+
+			const new_curse: curse = { dices, curse, state: "requested" }
+
+			io.to(room.id).emit("curse", new_curse)
 			room.coins -= number_of_dices * dice_coins
 			io.to(room.id).emit("coins", room.coins)
-			room.curses.push({ curse, dices, state: "requested" })
+			room.curses.push(new_curse)
 		})
 
-		socket.on("curse", (curse, dices, state) => {
+		socket.on("curse", (curse) => {
 			if (!room) return
-			io.to(room.id).emit("curse", curse, dices, state)
-			if (state !== "requested") room.curses.pop()
-			room.curses.push({ curse, dices, state })
+			io.to(room.id).emit("curse", curse)
+			if (curse.state !== "requested") room.curses.pop()
+			room.curses.push(curse)
 		})
 
 		socket.on("coins", (coins) => {
@@ -247,55 +245,53 @@ export default function (server: http.Server | Http2SecureServer) {
 			if (!room) return
 			room.game = state
 			io.to(room.id).emit("game", state)
-			if (state === "started") {
+			if (state === "ingame") {
 				room.started_at = Date.now()
-				io.to(room.id).emit("start", room.started_at)
+				io.to(room.id).emit("started", room.started_at)
+				room.players.forEach((player) => {
+					if (!room) return
+					if (player.coords) player.start_coords = player.coords
+				})
 			} else if (state === "ended") {
 				room.ended_at = Date.now()
-				io.to(room.id).emit("time", room.ended_at - room.started_at)
+				io.to(room.id).emit("ended", room.ended_at)
 			}
 		})
 
-		socket.on("ban", (name, banned) => {
+		socket.on("players", (players) => {
 			if (!room) return
-
-			const candidate_player = room.players.find((player) => player.name === name)
-			if (candidate_player) {
-				if (banned) {
-					candidate_player.banned = true
-					sockets[room.id][name]?.emit("ban")
-				} else {
-					candidate_player.banned = false
-				}
-			}
-
+			room.players = players
+			room.players.forEach((player) => {
+				if (!room) return
+				if (player.banned) sockets[room.id][player.name]?.emit("banned")
+			})
 			io.to(room.id).emit("players", room.players)
 		})
 
-		socket.on("end", () => {
+		socket.on("found", () => {
 			if (!room) return
 			const candidate_player = room.players.find((player) => player.name === socket.data.name)
 			if (!candidate_player) return
 
 			switch (candidate_player.role) {
 				case "seeker":
-					if (room.end_state === "hider") room.end_state = "both"
-					else room.end_state = "seeker"
+					if (room.found === "hider") room.found = "both"
+					else room.found = "seeker"
 					break
 				case "hider":
-					if (room.end_state === "seeker") room.end_state = "both"
-					else room.end_state = "hider"
+					if (room.found === "seeker") room.found = "both"
+					else room.found = "hider"
 					break
 			}
 
-			if (room.end_state === "both") {
+			if (room.found === "both") {
 				room.game = "ended"
 				io.to(room.id).emit("game", "ended")
 				room.ended_at = Date.now()
-				io.to(room.id).emit("time", room.ended_at - room.started_at)
+				io.to(room.id).emit("ended", room.ended_at)
 			}
 
-			io.to(room.id).emit("end", room.end_state)
+			io.to(room.id).emit("found", room.found)
 		})
 
 		socket.on("disconnecting", () => {
@@ -307,33 +303,14 @@ export default function (server: http.Server | Http2SecureServer) {
 			const index = rooms.findIndex(({ id }) => id === room?.id)
 			if (index === -1) return
 			rooms.splice(index, 1)
+
+			const candidate_player = room.players.find((player) => player.name === socket.data.name)
+			if (!candidate_player) return
+			candidate_player.disconnected = true
+
+			io.to(room.id).emit("players", room.players)
 		})
 	})
-}
-
-type Room = {
-	id: string
-	room_password: string
-	admin_password: string
-	players: player[]
-	coins: number
-	seeker_coords?: GeolocationCoordinates
-	seeker?: string
-	hider_coords?: GeolocationCoordinates
-	curses: {
-		dices: number[]
-		curse: keyof typeof dice_curses
-		state: "requested" | "completed" | "confirmed"
-	}[]
-	tasks: {
-		task: keyof typeof task_categories
-		state: "requested" | "completed" | "confirmed"
-		result?: string
-	}[]
-	game: "undefined" | "started" | "ended" | "aborted"
-	started_at: number
-	ended_at: number
-	end_state: undefined | "hider" | "seeker" | "both"
 }
 
 function random<T>(arr: T[]): T {

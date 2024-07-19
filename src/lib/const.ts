@@ -1,5 +1,7 @@
 // * TASKS
 
+import type { valueof } from "./types"
+
 export const category_coins = {
 	relative: 40,
 	radar: 30,
@@ -179,5 +181,3 @@ export const curse_descriptions: Record<valueof<typeof dice_curses>, string> = {
 	curse23: "Curse 23 description",
 	curse24: "Curse 24 description"
 }
-
-export type valueof<T> = T[keyof T]
