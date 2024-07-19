@@ -115,19 +115,22 @@ export default function (server: http.Server | Http2SecureServer) {
 		socket.on("task", (task) => {
 			if (!room) return
 
-			if (task.state === "requested" && room.curses.some((curse) => curse.state !== "confirmed")) {
-				return socket.emit(
-					"error",
-					"You need to complete all your curses first before you can send tasks"
-				)
-			}
+			if (task.state === "requested") {
+				if (room.curses.some((curse) => curse.state !== "confirmed")) {
+					return socket.emit(
+						"error",
+						"You need to complete all your curses first before you can send tasks"
+					)
+				}
 
-			if (task.state === "requested" && room.tasks.some((task) => task.state !== "confirmed")) {
-				return socket.emit("error", "You can only send one task at a time")
-			}
+				if (room.tasks.some((task) => task.state !== "confirmed")) {
+					return socket.emit("error", "You can only send one task at a time")
+				}
 
-			if (room.tasks.some((_task) => task.task === _task.task))
-				return socket.emit("error", "You cannot request the same task more than once")
+				if (room.tasks.some((_task) => task.task === _task.task)) {
+					return socket.emit("error", "You cannot request the same task more than once")
+				}
+			}
 
 			if (radars.includes(task.task as (typeof radars)[number])) {
 				const seeker_coords = room.players.find(

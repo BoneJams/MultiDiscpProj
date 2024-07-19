@@ -77,26 +77,7 @@ export const task_names: Record<keyof typeof task_categories, string> = {
 	precision1: "Precision 1",
 	precision2: "Precision 2"
 }
-export const task_descriptions: Record<keyof typeof task_categories, string> = {
-	relative1: "Relative 1 description",
-	relative2: "Relative 2 description",
-	radar5: "Radar 5m description",
-	radar10: "Radar 10m description",
-	radar25: "Radar 25m description",
-	radar50: "Radar 50m description",
-	radar100: "Radar 100m description",
-	radar200: "Radar 200m description",
-	radar500: "Radar 500m description",
-	radar1000: "Radar 1km description",
-	radar2000: "Radar 2km description",
-	radar5000: "Radar 5km description",
-	photos1: "Photos 1 description",
-	photos2: "Photos 2 description",
-	oddball1: "Oddball 1 description",
-	oddball2: "Oddball 2 description",
-	precision1: "Precision 1 description",
-	precision2: "Precision 2 description"
-}
+export const task_descriptions: Partial<Record<keyof typeof task_categories, string>> = {}
 
 // * CURSES
 
@@ -155,29 +136,4 @@ export const curse_names: Record<valueof<typeof dice_curses>, string> = {
 	curse23: "Curse 23",
 	curse24: "Curse 24"
 }
-export const curse_descriptions: Record<valueof<typeof dice_curses>, string> = {
-	curse01: "Curse 01 description",
-	curse02: "Curse 02 description",
-	curse03: "Curse 03 description",
-	curse04: "Curse 04 description",
-	curse05: "Curse 05 description",
-	curse06: "Curse 06 description",
-	curse07: "Curse 07 description",
-	curse08: "Curse 08 description",
-	curse09: "Curse 09 description",
-	curse10: "Curse 10 description",
-	curse11: "Curse 11 description",
-	curse12: "Curse 12 description",
-	curse13: "Curse 13 description",
-	curse14: "Curse 14 description",
-	curse15: "Curse 15 description",
-	curse16: "Curse 16 description",
-	curse17: "Curse 17 description",
-	curse18: "Curse 18 description",
-	curse19: "Curse 19 description",
-	curse20: "Curse 20 description",
-	curse21: "Curse 21 description",
-	curse22: "Curse 22 description",
-	curse23: "Curse 23 description",
-	curse24: "Curse 24 description"
-}
+export const curse_descriptions: Partial<Record<valueof<typeof dice_curses>, string>> = {}

@@ -10,6 +10,7 @@
 		yellow_icon
 	} from "$lib/client/const"
 	import {
+		curse_descriptions,
 		curse_names,
 		dice_curses,
 		radars,
@@ -489,7 +490,7 @@
 
 {#snippet leave_game_button()}
 	<button
-		class=""
+		class="btn btn-error btn-sm"
 		onclick={() => {
 			sessionStorage.clear()
 			location.reload()
@@ -555,7 +556,11 @@
 		<div>Result</div>
 		{#each curses as curse}
 			<div>{curse.dices.join(", ")}</div>
-			<div>{curse_names[dice_curses[curse.curse]]}</div>
+			<div>
+				{curse_names[dice_curses[curse.curse]]}{curse_descriptions[dice_curses[curse.curse]]
+					? ` (${curse_descriptions[dice_curses[curse.curse]]})`
+					: ""}
+			</div>
 			<div
 				class={curse.state === "requested"
 					? "text-error"
@@ -598,7 +603,11 @@
 		<div>State</div>
 		<div>Result</div>
 		{#each tasks as task}
-			<div>{task_names[task.task]} ({task_descriptions[task.task]})</div>
+			<div>
+				{task_names[task.task]}{task_descriptions[task.task]
+					? ` (${task_descriptions[task.task]})`
+					: ""}
+			</div>
 			<div
 				class={task.state === "requested"
 					? "text-error"
