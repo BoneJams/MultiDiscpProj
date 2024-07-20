@@ -719,13 +719,41 @@
 							</Marker>
 						</LayerGroup>
 
+						<LayerGroup>
+							<Circle
+								latLng={[player.coords.latitude, player.coords.longitude]}
+								options={{
+									color: player.disconnected
+										? "#3D3D3D"
+										: player.role === "admin"
+											? "#CAC428"
+											: player.role === "seeker"
+												? "#CB2B3E"
+												: player.role === "hider"
+													? "#2A81CB"
+													: undefined,
+									fillColor: player.disconnected
+										? "#3D3D3D"
+										: player.role === "admin"
+											? "#CAC428"
+											: player.role === "seeker"
+												? "#CB2B3E"
+												: player.role === "hider"
+													? "#2A81CB"
+													: undefined,
+									fillOpacity: 0.1,
+									radius: player.coords.accuracy
+								}}
+							></Circle>
+						</LayerGroup>
+
 						{#if player.role === "hider" && player.start_coords}
 							<LayerGroup>
 								<Circle
 									latLng={[player.start_coords.latitude, player.start_coords.longitude]}
 									options={{
-										color: "blue",
-										fillColor: "#2A81CB",
+										color: "#00FFFF",
+										fillColor: "#00FFFF",
 										fillOpacity: 0.1,
 										radius: 1000
 									}}
