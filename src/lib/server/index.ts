@@ -244,20 +244,33 @@ export default function (server: http.Server | Http2SecureServer) {
 
 		socket.on("game", (state) => {
 			if (!room) return
-			room.game = state
-			io.to(room.id).emit("game", state)
-			if (state === "ingame") {
-				room.started_at = Date.now()
-				room.ended_at = undefined
-				io.to(room.id).emit("started", room.started_at)
-				room.players.forEach((player) => {
-					if (!room) return
-					if (player.coords) player.start_coords = player.coords
-				})
-			} else if (state === "ended") {
-				room.ended_at = Date.now()
-				io.to(room.id).emit("ended", room.ended_at)
+
+			io.to(room.id).emit("game", state, room.game)
+
+			switch (state) {
+				case "ingame":
+					if (room.ended_at && room.started_at && room.game === "paused") {
+						room.started_at = Date.now() - (room.ended_at - room.started_at)
+					} else {
+						room.started_at = Date.now()
+						room.tasks.forEach((task) => (task.old = true))
+						room.curses.forEach((curse) => (curse.old = true))
+					}
+					room.ended_at = undefined
+					io.to(room.id).emit("started", room.started_at)
+					room.players.forEach((player) => {
+						if (!room) return
+						if (player.coords) player.start_coords = player.coords
+					})
+					break
+				case "ended":
+				case "paused":
+					room.ended_at = Date.now()
+					io.to(room.id).emit("ended", room.ended_at)
+					break
 			}
+
+			room.game = state
 		})
 
 		socket.on("players", (players) => {

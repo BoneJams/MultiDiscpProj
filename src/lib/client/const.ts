@@ -4,8 +4,8 @@ import { io, type Socket } from "socket.io-client"
 
 export const socket: Socket<server_client, client_server> = io()
 
-export const green_icon = new Icon({
-	iconUrl: "/img/marker-icon-green.png",
+export const violet_icon = new Icon({
+	iconUrl: "/img/marker-icon-violet.png",
 	shadowUrl: "/img/marker-shadow.png",
 	iconSize: [25, 41],
 	iconAnchor: [12, 41],

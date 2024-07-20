@@ -29,7 +29,7 @@ export interface server_client {
 	"task"(task: task, new_task?: true): void
 	"curse"(curse: curse, new_curse?: true): void
 
-	"game"(state: game_state): void
+	"game"(state: game_state, previous?: game_state): void
 
 	"banned"(): void
 
@@ -60,14 +60,16 @@ export type task = {
 	task: keyof typeof task_categories
 	state: "requested" | "completed" | "confirmed"
 	result?: string
+	old?: true
 }
 export type curse = {
 	dices: number[]
 	curse: keyof typeof dice_curses
 	state: "requested" | "completed" | "confirmed"
+	old?: true
 }
 
-export type game_state = "waiting" | "ingame" | "ended" | "aborted"
+export type game_state = "waiting" | "ingame" | "paused" | "ended" | "aborted"
 export type found_state = "none" | "hider" | "seeker" | "both"
 
 export type Room = {

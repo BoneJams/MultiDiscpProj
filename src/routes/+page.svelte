@@ -4,9 +4,9 @@
 	import {
 		black_icon,
 		blue_icon,
-		green_icon,
 		red_icon,
 		socket,
+		violet_icon,
 		yellow_icon
 	} from "$lib/client/const"
 	import {
@@ -18,7 +18,7 @@
 		task_descriptions,
 		task_names
 	} from "$lib/const"
-	import type { found_state, game_state, player, task } from "$lib/types"
+	import type { curse, found_state, game_state, player, task } from "$lib/types"
 	import { Circle, LayerGroup, Map, Marker, Popup, TileLayer } from "sveaflet"
 	import { untrack } from "svelte"
 
@@ -54,18 +54,12 @@
 	let room_id = $state("")
 	let players = $state<player[]>([])
 
-	let self_coords = $state<{ latitude: number; longitude: number }>()
+	let self_coords = $state<{ latitude: number; longitude: number; accuracy: number }>()
 	let map_center = $state({ latitude: 11.107654906837048, longitude: 106.61411702472978 })
 
 	let coins = $state(0)
 	let tasks = $state<task[]>([])
-	let curses = $state<
-		{
-			curse: keyof typeof dice_curses
-			dices: number[]
-			state: "requested" | "completed" | "confirmed"
-		}[]
-	>([])
+	let curses = $state<curse[]>([])
 
 	let create_name = $state("")
 	let create_room_password = $state("")
@@ -142,7 +136,11 @@
 		curses.push(curse)
 	})
 
-	socket.on("game", (state) => {
+	socket.on("game", (state, previous) => {
+		if (previous !== "paused" && state === "ingame") {
+			tasks.forEach((task) => (task.old = true))
+			curses.forEach((curse) => (curse.old = true))
+		}
 		game = state
 	})
 
@@ -311,12 +309,11 @@
 
 		<!-- * ROOM -->
 	{:else if $page.state.page === "room"}
-		{@render leave_game_button()}
+		{@render top()}
 
-		<div class="text-3xl">Room ID: {room_id}</div>
 		<div class="text-xl">Waiting for admin to assign roles...</div>
 		<div>Player List:</div>
-		<div class="grid grid-cols-2 gap-1">
+		<div class="grid grid-cols-2 gap-x-4 gap-y-2">
 			<div>Player</div>
 			<div>Role</div>
 			{#each players as player}
@@ -337,11 +334,7 @@
 			.filter((player) => player.role === "seeker" && !player.disconnected)
 			.map((player) => player.coords)
 			.filter((coords) => coords !== undefined)}
-		{@render leave_game_button()}
-
-		<div>{hour}:{minute}:{second}.{ms}</div>
-
-		<div class="text-3xl">Room ID: {room_id}</div>
+		{@render top()}
 
 		<div class="text-3xl">Admin Panel</div>
 
@@ -359,6 +352,7 @@
 		>
 			<option value="waiting">Not In Game (Not Started Yet)</option>
 			<option value="ingame">In Game (Started)</option>
+			<option value="paused">Paused</option>
 			<option value="ended">Ended</option>
 			<option value="aborted">Aborted</option>
 		</select>
@@ -413,13 +407,11 @@
 			>
 		</div>
 
-		{@render render("admin")}
+		{@render bottom("admin")}
 
 		<!-- * SEEKER -->
 	{:else if $page.state.page === "seeker"}
-		{@render leave_game_button()}
-
-		<div>{hour}:{minute}:{second}.{ms}</div>
+		{@render top()}
 
 		<div class="text-3xl">Seeker</div>
 
@@ -453,13 +445,11 @@
 			{/each}
 		</div>
 
-		{@render render("seeker")}
+		{@render bottom("seeker")}
 
 		<!-- * HIDER -->
 	{:else if $page.state.page === "hider"}
-		{@render leave_game_button()}
-
-		<div>{hour}:{minute}:{second}.{ms}</div>
+		{@render top()}
 
 		<div class="text-3xl">Hider</div>
 		<div>You have {coins} coins</div>
@@ -484,11 +474,11 @@
 			>
 		</div>
 
-		{@render render("hider")}
+		{@render bottom("hider")}
 	{/if}
 </div>
 
-{#snippet leave_game_button()}
+{#snippet top()}
 	<button
 		class="btn btn-error btn-sm"
 		onclick={() => {
@@ -496,16 +486,20 @@
 			location.reload()
 		}}>Leave Game</button
 	>
+
+	<div class="font-mono">{hour}:{minute}:{second}.{ms} ({game})</div>
+
+	<div class="text-3xl">Room ID: {room_id}</div>
 {/snippet}
 
-{#snippet render(role: "admin" | "seeker" | "hider")}
+{#snippet bottom(role: "admin" | "seeker" | "hider")}
 	<hr class="w-full" />
 
-	{@render render_task_history(role)}
+	{@render task_history(role)}
 
 	<hr class="w-full" />
 
-	{@render render_curse_history(role)}
+	{@render curse_history(role)}
 
 	<hr class="w-full" />
 
@@ -543,10 +537,10 @@
 		}}>Re-center map (to your location)</button
 	>
 
-	{@render render_map()}
+	{@render map()}
 {/snippet}
 
-{#snippet render_curse_history(role: "admin" | "seeker" | "hider")}
+{#snippet curse_history(role: "admin" | "seeker" | "hider")}
 	<div class="text-xl">Curse History</div>
 
 	<div class="grid grid-cols-4 w-full items-center justify-center gap-4">
@@ -555,47 +549,27 @@
 		<div>State</div>
 		<div>Result</div>
 		{#each curses as curse}
-			<div>{curse.dices.join(", ")}</div>
-			<div>
-				{curse_names[dice_curses[curse.curse]]}{curse_descriptions[dice_curses[curse.curse]]
-					? ` (${curse_descriptions[dice_curses[curse.curse]]})`
-					: ""}
-			</div>
-			<div
-				class={curse.state === "requested"
-					? "text-error"
-					: curse.state === "completed"
-						? "text-warning"
-						: curse.state === "confirmed"
-							? "text-success"
-							: ""}
-			>
-				{curse.state}
-			</div>
-
-			<div>
-				{#if (role === "seeker" || role === "admin") && curse.state === "requested"}
-					<button
-						class="btn btn-primary btn-sm btn-error"
-						onclick={() => {
-							socket.emit("curse", { ...curse, state: "completed" })
-						}}>Mark the curse as completed</button
-					>
-				{/if}
-				{#if (role === "hider" || role === "admin") && curse.state === "completed"}
-					<button
-						class="btn btn-primary btn-sm btn-error"
-						onclick={() => {
-							socket.emit("curse", { ...curse, state: "confirmed" })
-						}}>Confirm the curse is completed</button
-					>
-				{/if}
-			</div>
+			{#if !curse.old}
+				{@render display_curse(role, curse)}
+			{/if}
 		{/each}
+
+		{#if curses.filter((curse) => curse.old).length}
+			<details class="collapse collapse-arrow text-opacity-50 text-base-content col-span-4 text-sm">
+				<summary class="collapse-title text-center">Old Curses</summary>
+				<div class="collapse-content grid grid-cols-4 items-center justify-center gap-4 p-0">
+					{#each curses as curse}
+						{#if curse.old}
+							{@render display_curse(role, curse)}
+						{/if}
+					{/each}
+				</div>
+			</details>
+		{/if}
 	</div>
 {/snippet}
 
-{#snippet render_task_history(role: "admin" | "seeker" | "hider")}
+{#snippet task_history(role: "admin" | "seeker" | "hider")}
 	<div class="text-xl">Task History</div>
 
 	<div class="grid grid-cols-3 w-full items-center justify-center gap-4">
@@ -603,50 +577,108 @@
 		<div>State</div>
 		<div>Result</div>
 		{#each tasks as task}
-			<div>
-				{task_names[task.task]}{task_descriptions[task.task]
-					? ` (${task_descriptions[task.task]})`
-					: ""}
-			</div>
-			<div
-				class={task.state === "requested"
-					? "text-error"
-					: task.state === "completed"
-						? "text-warning"
-						: task.state === "confirmed"
-							? "text-success"
-							: ""}
-			>
-				{task.state}
-			</div>
-			<div>
-				{#if (role === "hider" || role === "admin") && task.state === "requested"}
-					<button
-						class="btn btn-primary btn-sm btn-error"
-						onclick={() => {
-							socket.emit("task", { ...task, state: "completed" })
-						}}>Mark the task as completed</button
-					>
-				{/if}
-
-				{#if (role === "seeker" || role === "admin") && task.state === "completed"}
-					<button
-						class="btn btn-primary btn-sm btn-error"
-						onclick={() => {
-							socket.emit("task", { ...task, state: "confirmed" })
-						}}>Confirm the task is completed</button
-					>
-				{/if}
-
-				{#if task.result}
-					<div>{task.result}</div>
-				{/if}
-			</div>
+			{#if !task.old}
+				{@render display_task(role, task)}
+			{/if}
 		{/each}
+
+		{#if tasks.filter((task) => task.old).length}
+			<details class="collapse collapse-arrow col-span-3 text-opacity-50 text-base-content text-sm">
+				<summary class="collapse-title text-center">Old Tasks</summary>
+				<div class="collapse-content grid grid-cols-3 items-center justify-center gap-4 p-0">
+					{#each tasks as task}
+						{#if task.old}
+							{@render display_task(role, task)}
+						{/if}
+					{/each}
+				</div>
+			</details>
+		{/if}
 	</div>
 {/snippet}
 
-{#snippet render_map()}
+{#snippet display_task(role: "admin" | "seeker" | "hider", task: task)}
+	<div>
+		{task_names[task.task]}{task_descriptions[task.task]
+			? ` (${task_descriptions[task.task]})`
+			: ""}
+	</div>
+	<div
+		class={task.state === "requested"
+			? "text-error"
+			: task.state === "completed"
+				? "text-warning"
+				: task.state === "confirmed"
+					? "text-success"
+					: ""}
+	>
+		{task.state}
+	</div>
+	<div>
+		{#if (role === "hider" || role === "admin") && task.state === "requested"}
+			<button
+				class="btn btn-primary btn-sm btn-error"
+				onclick={() => {
+					socket.emit("task", { ...task, state: "completed" })
+				}}>Mark the task as completed</button
+			>
+		{/if}
+
+		{#if (role === "seeker" || role === "admin") && task.state === "completed"}
+			<button
+				class="btn btn-primary btn-sm btn-error"
+				onclick={() => {
+					socket.emit("task", { ...task, state: "confirmed" })
+				}}>Confirm the task is completed</button
+			>
+		{/if}
+
+		{#if task.result}
+			<div>{task.result}</div>
+		{/if}
+	</div>
+{/snippet}
+
+{#snippet display_curse(role: "admin" | "seeker" | "hider", curse: curse)}
+	<div>{curse.dices.join(", ")}</div>
+	<div>
+		{curse_names[dice_curses[curse.curse]]}{curse_descriptions[dice_curses[curse.curse]]
+			? ` (${curse_descriptions[dice_curses[curse.curse]]})`
+			: ""}
+	</div>
+	<div
+		class={curse.state === "requested"
+			? "text-error"
+			: curse.state === "completed"
+				? "text-warning"
+				: curse.state === "confirmed"
+					? "text-success"
+					: ""}
+	>
+		{curse.state}
+	</div>
+
+	<div>
+		{#if (role === "seeker" || role === "admin") && curse.state === "requested"}
+			<button
+				class="btn btn-primary btn-sm btn-error"
+				onclick={() => {
+					socket.emit("curse", { ...curse, state: "completed" })
+				}}>Mark the curse as completed</button
+			>
+		{/if}
+		{#if (role === "hider" || role === "admin") && curse.state === "completed"}
+			<button
+				class="btn btn-primary btn-sm btn-error"
+				onclick={() => {
+					socket.emit("curse", { ...curse, state: "confirmed" })
+				}}>Confirm the curse is completed</button
+			>
+		{/if}
+	</div>
+{/snippet}
+
+{#snippet map()}
 	<div class="w-full aspect-video">
 		<Map
 			options={{
@@ -714,10 +746,22 @@
 				<LayerGroup>
 					<Marker
 						latLng={[self_coords.latitude, self_coords.longitude]}
-						options={{ icon: green_icon }}
+						options={{ icon: violet_icon }}
 					>
 						<Popup options={{ content: "You" }}></Popup>
 					</Marker>
+				</LayerGroup>
+
+				<LayerGroup>
+					<Circle
+						latLng={[self_coords.latitude, self_coords.longitude]}
+						options={{
+							color: "#9C2BCB",
+							fillColor: "#9C2BCB",
+							fillOpacity: 0.1,
+							radius: self_coords.accuracy
+						}}
+					></Circle>
 				</LayerGroup>
 
 				{#if self_role === "hider" && self_start_coords}
