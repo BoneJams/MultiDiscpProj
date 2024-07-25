@@ -1,6 +1,6 @@
 # [LagHS](https://laghs.20050703.xyz): Application for Hide and Seek Game Management
 
-## Programmer: [LTS20050703](https://lts20050703.srht.site)
+## Programmer: [LTS (Link)](https://20050703.xyz)
 
 ## Design, User Interface & Experience: [TwoQuantumBits](https://2qb.bio.link)
 
