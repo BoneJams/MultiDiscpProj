@@ -1,16 +1,16 @@
-import type http from "http"
-import type { Http2SecureServer } from "http2"
-import { Server, Socket } from "socket.io"
+import type http from "node:http"
+import type { Http2SecureServer } from "node:http2"
+import { Server, type Socket } from "socket.io"
 import {
 	category_coins,
 	dice_coins,
+	type dice_curses,
 	radar_meters,
 	radars,
 	task_categories,
-	task_names,
-	type dice_curses
+	task_names
 } from "../const"
-import type { client_server, curse, data, Room, server_client, task } from "../types"
+import type { Room, client_server, curse, data, server_client, task } from "../types"
 
 export default function (server: http.Server | Http2SecureServer) {
 	const io = new Server<client_server, server_client, Record<string, never>, data>(server)
@@ -53,7 +53,7 @@ export default function (server: http.Server | Http2SecureServer) {
 
 			let candidate_player = candidate_room.players.find((player) => player.name === name)
 
-			if (candidate_player && candidate_player.banned) return socket.emit("banned")
+			if (candidate_player?.banned) return socket.emit("banned")
 
 			if (candidate_player) {
 				if (candidate_player.role === "admin" && !admin)
@@ -86,12 +86,12 @@ export default function (server: http.Server | Http2SecureServer) {
 
 			socket.data.name = name
 			sockets[room_id][name] = socket
-			connected_clients[parseInt(room_id)] += 1
+			connected_clients[Number.parseInt(room_id)] += 1
 
 			// * Sync room data to the client
 			socket.emit("coins", room.coins)
-			room.tasks.forEach((task) => socket.emit("task", task, true))
-			room.curses.forEach((curse) => socket.emit("curse", curse, true))
+			for (const task of room.tasks) socket.emit("task", task, true)
+			for (const curse of room.curses) socket.emit("curse", curse, true)
 			socket.emit("game", room.game)
 			if (room.started_at) socket.emit("started", room.started_at)
 			if (room.ended_at) socket.emit("ended", room.ended_at)
@@ -190,8 +190,8 @@ export default function (server: http.Server | Http2SecureServer) {
 		socket.on("dice", (number_of_dices_str) => {
 			if (!room) return
 
-			const number_of_dices = parseInt(number_of_dices_str)
-			if (isNaN(number_of_dices) || number_of_dices <= 0)
+			const number_of_dices = Number.parseInt(number_of_dices_str)
+			if (Number.isNaN(number_of_dices) || number_of_dices <= 0)
 				return socket.emit("error", "Invalid number of dices")
 
 			if (number_of_dices * dice_coins > room.coins) {
@@ -253,15 +253,14 @@ export default function (server: http.Server | Http2SecureServer) {
 						room.started_at = Date.now() - (room.ended_at - room.started_at)
 					} else {
 						room.started_at = Date.now()
-						room.tasks.forEach((task) => (task.old = true))
-						room.curses.forEach((curse) => (curse.old = true))
+						for (const task of room.tasks) task.old = true
+						for (const curse of room.curses) curse.old = true
 					}
 					room.ended_at = undefined
 					io.to(room.id).emit("started", room.started_at)
-					room.players.forEach((player) => {
-						if (!room) return
+					for (const player of room.players) {
 						if (player.coords) player.start_coords = player.coords
-					})
+					}
 					break
 				case "ended":
 				case "paused":
@@ -276,10 +275,9 @@ export default function (server: http.Server | Http2SecureServer) {
 		socket.on("players", (players) => {
 			if (!room) return
 			room.players = players
-			room.players.forEach((player) => {
-				if (!room) return
+			for (const player of room.players) {
 				if (player.banned) sockets[room.id][player.name]?.emit("banned")
-			})
+			}
 			io.to(room.id).emit("players", room.players)
 		})
 
@@ -312,8 +310,8 @@ export default function (server: http.Server | Http2SecureServer) {
 		socket.on("disconnecting", () => {
 			if (!room) return
 
-			connected_clients[parseInt(room.id)] -= 1
-			if (connected_clients[parseInt(room.id)] > 0) return
+			connected_clients[Number.parseInt(room.id)] -= 1
+			if (connected_clients[Number.parseInt(room.id)] > 0) return
 			room_ids.push(room.id)
 			const index = rooms.findIndex(({ id }) => id === room?.id)
 			if (index === -1) return

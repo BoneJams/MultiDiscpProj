@@ -1,44 +1,44 @@
 import type { dice_curses, task_categories } from "./const"
 
 export interface client_server {
-	"create"(player_name: string, room_password: string, admin_password: string): void
-	"join"(room_id: string, player_name: string, password: string, admin: boolean): void
+	create(player_name: string, room_password: string, admin_password: string): void
+	join(room_id: string, player_name: string, password: string, admin: boolean): void
 
-	"players"(players: player[]): void
-	"coins"(coins: number): void
+	players(players: player[]): void
+	coins(coins: number): void
 
-	"task"(task: task): void
+	task(task: task): void
 
-	"dice"(number_of_dices: string): void
+	dice(number_of_dices: string): void
 
-	"curse"(curse: curse): void
+	curse(curse: curse): void
 
-	"game"(state: game_state): void
-	"found"(): void
+	game(state: game_state): void
+	found(): void
 
-	"gps"(coords: GeolocationCoordinates): void
+	gps(coords: GeolocationCoordinates): void
 }
 
 export interface server_client {
-	"create"(room_id: string): void
-	"join"(room_id: string): void
+	create(room_id: string): void
+	join(room_id: string): void
 
-	"players"(players: player[]): void
-	"coins"(coins: number): void
+	players(players: player[]): void
+	coins(coins: number): void
 
-	"task"(task: task, new_task?: true): void
-	"curse"(curse: curse, new_curse?: true): void
+	task(task: task, new_task?: true): void
+	curse(curse: curse, new_curse?: true): void
 
-	"game"(state: game_state, previous?: game_state): void
+	game(state: game_state, previous?: game_state): void
 
-	"banned"(): void
+	banned(): void
 
-	"found"(state: found_state): void
+	found(state: found_state): void
 
-	"started"(started_at: number): void
-	"ended"(ended_at: number): void
+	started(started_at: number): void
+	ended(ended_at: number): void
 
-	"error"(error: string): void
+	error(error: string): void
 }
 
 export interface data {

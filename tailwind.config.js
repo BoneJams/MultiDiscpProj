@@ -15,14 +15,14 @@ export default {
 		themes: [
 			{
 				light: {
-					...require("daisyui/src/theming/themes")["light"], // eslint-disable-line @typescript-eslint/no-require-imports
+					...require("daisyui/src/theming/themes").light, // eslint-disable-line @typescript-eslint/no-require-imports
 					primary: "#32D7A0",
 					secondary: "#FBAC55"
 				}
 			},
 			{
 				dark: {
-					...require("daisyui/src/theming/themes")["dark"], // eslint-disable-line @typescript-eslint/no-require-imports
+					...require("daisyui/src/theming/themes").dark, // eslint-disable-line @typescript-eslint/no-require-imports
 					primary: "#32D7A0",
 					secondary: "#FBAC55",
 					"base-content": "#FFFFFF"

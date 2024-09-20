@@ -1,6 +1,6 @@
 import type { client_server, server_client } from "$lib/types"
 import { Icon } from "leaflet"
-import { io, type Socket } from "socket.io-client"
+import { type Socket, io } from "socket.io-client"
 
 export const socket: Socket<server_client, client_server> = io()
 
