@@ -1,242 +1,249 @@
 <script lang="ts">
-import { pushState } from "$app/navigation"
-import { page } from "$app/stores"
-import {
-	black_icon,
-	blue_icon,
-	red_icon,
-	socket,
-	violet_icon,
-	yellow_icon
-} from "$lib/client/const"
-import {
-	curse_descriptions,
-	curse_names,
-	dice_curses,
-	radars,
-	task_categories,
-	task_descriptions,
-	task_names
-} from "$lib/const"
-import type { curse, found_state, game_state, player, task } from "$lib/types"
-import { Circle, LayerGroup, Marker, Popup, Map as SveafletMap, TileLayer } from "sveaflet"
-import { untrack } from "svelte"
+	import { pushState } from "$app/navigation"
+	import { page } from "$app/stores"
+	import {
+		black_icon,
+		blue_icon,
+		red_icon,
+		socket,
+		violet_icon,
+		yellow_icon
+	} from "$lib/client/const"
+	import {
+		curse_descriptions,
+		curse_names,
+		dice_curses,
+		radars,
+		task_categories,
+		task_descriptions,
+		task_names
+	} from "$lib/const"
+	import type { curse, found_state, game_state, player, task } from "$lib/types"
+	import { Circle, LayerGroup, Marker, Popup, Map as SveafletMap, TileLayer } from "sveaflet"
+	import { untrack } from "svelte"
 
-// * STATES
+	// * STATES
 
-// biome-ignore lint/style/useConst: false positive
-let number_of_dices_str = $state("")
+	// biome-ignore lint/style/useConst: false positive
+	let number_of_dices_str = $state("")
 
-let started_at = $state<number>()
-let ended_at = $state<number>()
+	let started_at = $state<number>()
+	let ended_at = $state<number>()
 
-let time = $state(0)
+	let time = $state(0)
 
-const hour = $derived(
-	Math.floor(time / 3600000)
-		.toString()
-		.padStart(2, "0")
-)
-const minute = $derived(
-	Math.floor((time % 3600000) / 60000)
-		.toString()
-		.padStart(2, "0")
-)
-const second = $derived(
-	Math.floor((time % 60000) / 1000)
-		.toString()
-		.padStart(2, "0")
-)
-const ms = $derived((time % 1000).toString().padStart(3, "0"))
+	const hour = $derived(
+		Math.floor(time / 3600000)
+			.toString()
+			.padStart(2, "0")
+	)
+	const minute = $derived(
+		Math.floor((time % 3600000) / 60000)
+			.toString()
+			.padStart(2, "0")
+	)
+	const second = $derived(
+		Math.floor((time % 60000) / 1000)
+			.toString()
+			.padStart(2, "0")
+	)
+	const ms = $derived((time % 1000).toString().padStart(3, "0"))
 
-let found = $state<found_state>("none")
+	let found = $state<found_state>("none")
 
-let game = $state<game_state>("waiting")
-let room_id = $state("")
-let players = $state<player[]>([])
+	let game = $state<game_state>("waiting")
+	let room_id = $state("")
+	let players = $state<player[]>([])
 
-let self_coords = $state<{ latitude: number; longitude: number; accuracy: number }>()
-let map_center = $state({ latitude: 11.107654906837048, longitude: 106.61411702472978 })
-
-let coins = $state(0)
-const tasks = $state<task[]>([])
-const curses = $state<curse[]>([])
-
-let create_name = $state("")
-let create_room_password = $state("")
-let create_admin_password = $state("")
-
-let join_id = $state("")
-let join_name = $state("")
-let join_admin = $state(false)
-let join_password = $state("")
-
-// * SOCKET
-
-socket.on("create", (id) => {
-	socket.emit("join", id, create_name, create_admin_password, true)
-})
-
-socket.on("join", (id) => {
-	room_id = id
-	pushState("", { page: "room" })
-})
-
-socket.on("error", (error) => {
-	alert(error)
-})
-
-socket.on("players", (_players) => {
-	players = _players
-	if (join_id && join_name) {
-		const player = players.find((player) => player.name === join_name)
-		if (!player) return
-
-		switch (player.role) {
-			case "admin":
-				pushState("", { page: "admin" })
-				break
-			case "seeker":
-				pushState("", { page: "seeker" })
-				break
-			case "hider":
-				pushState("", { page: "hider" })
-				break
-		}
-	}
-
-	if (room_id && create_name) {
-		const player = players.find((player) => player.name === create_name)
-		if (!player) return
-
-		switch (player.role) {
-			case "admin":
-				pushState("", { page: "admin" })
-				break
-			case "seeker":
-				pushState("", { page: "seeker" })
-				break
-			case "hider":
-				pushState("", { page: "hider" })
-				break
-		}
-	}
-})
-
-socket.on("coins", (new_coins) => {
-	coins = new_coins
-})
-
-socket.on("task", (task, new_task) => {
-	if (task.state !== "requested" && !new_task) tasks.pop()
-	tasks.push(task)
-})
-
-socket.on("curse", (curse, new_curse) => {
-	if (curse.state !== "requested" && !new_curse) curses.pop()
-	curses.push(curse)
-})
-
-socket.on("game", (state, previous) => {
-	if (previous !== "paused" && state === "ingame") {
-		for (const task of tasks) task.old = true
-		for (const curse of curses) curse.old = true
-	}
-	game = state
-})
-
-socket.on("banned", () => {
-	alert("You have been banned from this room")
-	setTimeout(() => {
-		sessionStorage.clear()
-		location.reload()
-	}, 3000)
-})
-
-socket.on("found", (state) => {
-	found = state
-})
-
-socket.on("started", (ms) => {
-	ended_at = undefined
-	started_at = ms
-	update_time()
-})
-
-socket.on("ended", (ms) => {
-	ended_at = ms
-	time = ended_at - (started_at ?? 0)
-})
-
-// * $EFFECTS
-
-$effect(() => {
-	untrack(() => {
-		room_id = sessionStorage.getItem("room_id") ?? ""
-
-		create_name = sessionStorage.getItem("create_name") ?? ""
-		create_room_password = sessionStorage.getItem("create_room_password") ?? ""
-		create_admin_password = sessionStorage.getItem("create_admin_password") ?? ""
-
-		join_id = sessionStorage.getItem("join_id") ?? ""
-		join_name = sessionStorage.getItem("join_name") ?? ""
-		join_admin = sessionStorage.getItem("join_admin") === "true"
-		join_password = sessionStorage.getItem("join_password") ?? ""
-
-		if (join_id && join_name) socket.emit("join", join_id, join_name, join_password, join_admin)
-
-		if (room_id && create_name)
-			socket.emit("join", room_id, create_name, create_admin_password, true)
-
-		navigator.geolocation.watchPosition(
-			(position) => {
-				if (!self_coords) map_center = position.coords
-				self_coords = position.coords
-				socket.emit("gps", position.coords)
-			},
-			(e) => {
-				console.log(e)
-				alert(
-					"GPS is not available. Please make sure you have allow location access. If it still does not work, please try refreshing the page. If it still does not work, please use another device, preferably a mobile phone."
-				)
-			},
-			{ enableHighAccuracy: true, maximumAge: 0, timeout: 10000 }
-		)
+	let self_coords = $state<{
+		latitude: number
+		longitude: number
+		accuracy: number
+	}>()
+	let map_center = $state({
+		latitude: 11.107654906837048,
+		longitude: 106.61411702472978
 	})
-})
 
-$effect(() => {
-	sessionStorage.setItem("room_id", room_id)
+	let coins = $state(0)
+	const tasks = $state<task[]>([])
+	const curses = $state<curse[]>([])
 
-	sessionStorage.setItem("create_name", create_name)
-	sessionStorage.setItem("create_room_password", create_room_password)
-	sessionStorage.setItem("create_admin_password", create_admin_password)
+	let create_name = $state("")
+	let create_room_password = $state("")
+	let create_admin_password = $state("")
 
-	sessionStorage.setItem("join_id", join_id)
-	sessionStorage.setItem("join_name", join_name)
-	sessionStorage.setItem("join_admin", join_admin.toString())
-	sessionStorage.setItem("join_password", join_password)
-})
+	let join_id = $state("")
+	let join_name = $state("")
+	let join_admin = $state(false)
+	let join_password = $state("")
 
-// * FUNCTIONS
+	// * SOCKET
 
-function create(ev: KeyboardEvent | MouseEvent) {
-	if (ev instanceof KeyboardEvent && ev.key !== "Enter") return
-	if (!create_name) return alert("Please enter a name")
-	socket.emit("create", create_name, create_room_password, create_admin_password)
-}
+	socket.on("create", (id) => {
+		socket.emit("join", id, create_name, create_admin_password, true)
+	})
 
-function join(ev: KeyboardEvent | MouseEvent) {
-	if (ev instanceof KeyboardEvent && ev.key !== "Enter") return
-	if (!join_id || !join_name) return alert("Please enter a room ID and a name")
-	socket.emit("join", join_id, join_name, join_password, join_admin)
-}
+	socket.on("join", (id) => {
+		room_id = id
+		pushState("", { page: "room" })
+	})
 
-function update_time() {
-	if (game !== "ingame") return
-	requestAnimationFrame(update_time)
-	time = (ended_at ?? Date.now()) - (started_at ?? Date.now())
-}
+	socket.on("error", (error) => {
+		alert(error)
+	})
+
+	socket.on("players", (_players) => {
+		players = _players
+		if (join_id && join_name) {
+			const player = players.find((player) => player.name === join_name)
+			if (!player) return
+
+			switch (player.role) {
+				case "admin":
+					pushState("", { page: "admin" })
+					break
+				case "seeker":
+					pushState("", { page: "seeker" })
+					break
+				case "hider":
+					pushState("", { page: "hider" })
+					break
+			}
+		}
+
+		if (room_id && create_name) {
+			const player = players.find((player) => player.name === create_name)
+			if (!player) return
+
+			switch (player.role) {
+				case "admin":
+					pushState("", { page: "admin" })
+					break
+				case "seeker":
+					pushState("", { page: "seeker" })
+					break
+				case "hider":
+					pushState("", { page: "hider" })
+					break
+			}
+		}
+	})
+
+	socket.on("coins", (new_coins) => {
+		coins = new_coins
+	})
+
+	socket.on("task", (task, new_task) => {
+		if (task.state !== "requested" && !new_task) tasks.pop()
+		tasks.push(task)
+	})
+
+	socket.on("curse", (curse, new_curse) => {
+		if (curse.state !== "requested" && !new_curse) curses.pop()
+		curses.push(curse)
+	})
+
+	socket.on("game", (state, previous) => {
+		if (previous !== "paused" && state === "ingame") {
+			for (const task of tasks) task.old = true
+			for (const curse of curses) curse.old = true
+		}
+		game = state
+	})
+
+	socket.on("banned", () => {
+		alert("You have been banned from this room")
+		setTimeout(() => {
+			sessionStorage.clear()
+			location.reload()
+		}, 3000)
+	})
+
+	socket.on("found", (state) => {
+		found = state
+	})
+
+	socket.on("started", (ms) => {
+		ended_at = undefined
+		started_at = ms
+		update_time()
+	})
+
+	socket.on("ended", (ms) => {
+		ended_at = ms
+		time = ended_at - (started_at ?? 0)
+	})
+
+	// * $EFFECTS
+
+	$effect(() => {
+		untrack(() => {
+			room_id = sessionStorage.getItem("room_id") ?? ""
+
+			create_name = sessionStorage.getItem("create_name") ?? ""
+			create_room_password = sessionStorage.getItem("create_room_password") ?? ""
+			create_admin_password = sessionStorage.getItem("create_admin_password") ?? ""
+
+			join_id = sessionStorage.getItem("join_id") ?? ""
+			join_name = sessionStorage.getItem("join_name") ?? ""
+			join_admin = sessionStorage.getItem("join_admin") === "true"
+			join_password = sessionStorage.getItem("join_password") ?? ""
+
+			if (join_id && join_name) socket.emit("join", join_id, join_name, join_password, join_admin)
+
+			if (room_id && create_name)
+				socket.emit("join", room_id, create_name, create_admin_password, true)
+
+			navigator.geolocation.watchPosition(
+				(position) => {
+					if (!self_coords) map_center = position.coords
+					self_coords = position.coords
+					socket.emit("gps", position.coords)
+				},
+				(e) => {
+					console.log(e)
+					alert(
+						"GPS is not available. Please make sure you have allow location access. If it still does not work, please try refreshing the page. If it still does not work, please use another device, preferably a mobile phone."
+					)
+				},
+				{ enableHighAccuracy: true, maximumAge: 0, timeout: 10000 }
+			)
+		})
+	})
+
+	$effect(() => {
+		sessionStorage.setItem("room_id", room_id)
+
+		sessionStorage.setItem("create_name", create_name)
+		sessionStorage.setItem("create_room_password", create_room_password)
+		sessionStorage.setItem("create_admin_password", create_admin_password)
+
+		sessionStorage.setItem("join_id", join_id)
+		sessionStorage.setItem("join_name", join_name)
+		sessionStorage.setItem("join_admin", join_admin.toString())
+		sessionStorage.setItem("join_password", join_password)
+	})
+
+	// * FUNCTIONS
+
+	function create(ev: KeyboardEvent | MouseEvent) {
+		if (ev instanceof KeyboardEvent && ev.key !== "Enter") return
+		if (!create_name) return alert("Please enter a name")
+		socket.emit("create", create_name, create_room_password, create_admin_password)
+	}
+
+	function join(ev: KeyboardEvent | MouseEvent) {
+		if (ev instanceof KeyboardEvent && ev.key !== "Enter") return
+		if (!join_id || !join_name) return alert("Please enter a room ID and a name")
+		socket.emit("join", join_id, join_name, join_password, join_admin)
+	}
+
+	function update_time() {
+		if (game !== "ingame") return
+		requestAnimationFrame(update_time)
+		time = (ended_at ?? Date.now()) - (started_at ?? Date.now())
+	}
 </script>
 
 <div class="m-4 flex flex-col items-center justify-center gap-4">
