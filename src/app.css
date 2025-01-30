@@ -1,5 +1,29 @@
 @import url("https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300..700&display=swap");
 
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@import "tailwindcss";
+
+@theme {
+	--font-sans: "Space Grotesk", var(--font-sans);
+}
+
+@plugin "daisyui" {
+	themes: dark, light;
+}
+
+@plugin "daisyui/theme" {
+	name: "dark";
+	prefersdark: true;
+	--color-primary: #32d7a0;
+	--color-secondary: #fbac55;
+}
+
+@plugin "daisyui/theme" {
+	name: "light";
+	default: true;
+	--color-primary: #32d7a0;
+	--color-secondary: #fbac55;
+}
+
+a {
+	@apply !link !link-primary;
+}
