@@ -1,6 +1,6 @@
-import type http from "node:http"
-import type { Http2SecureServer } from "node:http2"
-import { Server, type Socket } from "socket.io"
+import type http from 'node:http';
+import type { Http2SecureServer } from 'node:http2';
+import { Server, type Socket } from 'socket.io';
 import {
 	category_coins,
 	dice_coins,
@@ -9,331 +9,331 @@ import {
 	radars,
 	task_categories,
 	task_names
-} from "../const"
-import type { Room, client_server, curse, data, server_client, task } from "../types"
+} from '../const';
+import type { Room, client_server, curse, data, server_client, task } from '../types';
 
 export default function (server: http.Server | Http2SecureServer) {
-	const io = new Server<client_server, server_client, Record<string, never>, data>(server)
+	const io = new Server<client_server, server_client, Record<string, never>, data>(server);
 
-	const room_ids = Array.from({ length: 899 }, (_, i) => (i + 100).toString())
-	const rooms: Room[] = []
-	const connected_clients = new Array(1000).fill(0)
+	const room_ids = Array.from({ length: 899 }, (_, i) => (i + 100).toString());
+	const rooms: Room[] = [];
+	const connected_clients = new Array(1000).fill(0);
 
-	io.on("connection", (socket) => {
-		let room: Room | undefined
-		socket.on("create", (name, room_password, admin_password) => {
-			const id = random(room_ids)
+	io.on('connection', (socket) => {
+		let room: Room | undefined;
+		socket.on('create', (name, room_password, admin_password) => {
+			const id = random(room_ids);
 
 			rooms.push({
 				id,
 				room_password,
 				admin_password,
-				players: [{ name, role: "admin", banned: false, disconnected: false }],
+				players: [{ name, role: 'admin', banned: false, disconnected: false }],
 				coins: 0,
 				curses: [],
 				tasks: [],
-				game: "waiting",
-				found: "none"
-			})
+				game: 'waiting',
+				found: 'none'
+			});
 
-			socket.emit("create", id)
+			socket.emit('create', id);
 
-			sockets[id] = {}
-		})
+			sockets[id] = {};
+		});
 
-		socket.on("join", (room_id, name, password, admin) => {
-			const candidate_room = rooms.find((room) => room.id === room_id)
+		socket.on('join', (room_id, name, password, admin) => {
+			const candidate_room = rooms.find((room) => room.id === room_id);
 			if (!candidate_room) {
-				socket.emit("error", "Room not found")
-				return
+				socket.emit('error', 'Room not found');
+				return;
 			}
 
 			if (password !== (admin ? candidate_room.admin_password : candidate_room.room_password))
-				return socket.emit("error", "Wrong password")
+				return socket.emit('error', 'Wrong password');
 
-			let candidate_player = candidate_room.players.find((player) => player.name === name)
+			let candidate_player = candidate_room.players.find((player) => player.name === name);
 
-			if (candidate_player?.banned) return socket.emit("banned")
+			if (candidate_player?.banned) return socket.emit('banned');
 
 			if (candidate_player) {
-				if (candidate_player.role === "admin" && !admin)
+				if (candidate_player.role === 'admin' && !admin)
 					return socket.emit(
-						"error",
-						"If you are an admin please log in as admin. If you are not an admin, please choose another name."
-					)
-				if (candidate_player.role !== "admin" && admin)
+						'error',
+						'If you are an admin please log in as admin. If you are not an admin, please choose another name.'
+					);
+				if (candidate_player.role !== 'admin' && admin)
 					return socket.emit(
-						"error",
-						"If you are an admin, please choose another name. If you are not an admin, turn off join as admin."
-					)
+						'error',
+						'If you are an admin, please choose another name. If you are not an admin, turn off join as admin.'
+					);
 
-				candidate_player.disconnected = false
+				candidate_player.disconnected = false;
 			} else {
 				candidate_player = {
-					role: admin ? "admin" : "none",
+					role: admin ? 'admin' : 'none',
 					name,
 					banned: false,
 					disconnected: false
-				}
-				candidate_room.players.push(candidate_player)
+				};
+				candidate_room.players.push(candidate_player);
 			}
 
 			// * Passed all checks, join the room
 
-			room = candidate_room
-			socket.join(room_id)
-			socket.emit("join", room_id)
+			room = candidate_room;
+			socket.join(room_id);
+			socket.emit('join', room_id);
 
-			socket.data.name = name
-			sockets[room_id][name] = socket
-			connected_clients[Number.parseInt(room_id)] += 1
+			socket.data.name = name;
+			sockets[room_id][name] = socket;
+			connected_clients[Number.parseInt(room_id)] += 1;
 
 			// * Sync room data to the client
-			socket.emit("coins", room.coins)
-			for (const task of room.tasks) socket.emit("task", task, true)
-			for (const curse of room.curses) socket.emit("curse", curse, true)
-			socket.emit("game", room.game)
-			if (room.started_at) socket.emit("started", room.started_at)
-			if (room.ended_at) socket.emit("ended", room.ended_at)
+			socket.emit('coins', room.coins);
+			for (const task of room.tasks) socket.emit('task', task, true);
+			for (const curse of room.curses) socket.emit('curse', curse, true);
+			socket.emit('game', room.game);
+			if (room.started_at) socket.emit('started', room.started_at);
+			if (room.ended_at) socket.emit('ended', room.ended_at);
 
 			// * Sync room data to all clients
-			io.to(room_id).emit("players", room.players)
-		})
+			io.to(room_id).emit('players', room.players);
+		});
 
-		socket.on("gps", (coords) => {
-			if (!room) return
+		socket.on('gps', (coords) => {
+			if (!room) return;
 
-			const candidate_player = room?.players.find((player) => player.name === socket.data.name)
+			const candidate_player = room?.players.find((player) => player.name === socket.data.name);
 
-			if (!candidate_player) return
+			if (!candidate_player) return;
 
-			candidate_player.coords = coords
+			candidate_player.coords = coords;
 
-			io.to(room.id).emit("players", room.players)
-		})
+			io.to(room.id).emit('players', room.players);
+		});
 
-		socket.on("task", (task) => {
-			if (!room) return
+		socket.on('task', (task) => {
+			if (!room) return;
 
-			if (task.state === "requested") {
-				if (room.curses.some((curse) => curse.state !== "confirmed")) {
+			if (task.state === 'requested') {
+				if (room.curses.some((curse) => curse.state !== 'confirmed')) {
 					return socket.emit(
-						"error",
-						"You need to complete all your curses first before you can send tasks"
-					)
+						'error',
+						'You need to complete all your curses first before you can send tasks'
+					);
 				}
 
-				if (room.tasks.some((task) => task.state !== "confirmed")) {
-					return socket.emit("error", "You can only send one task at a time")
+				if (room.tasks.some((task) => task.state !== 'confirmed')) {
+					return socket.emit('error', 'You can only send one task at a time');
 				}
 
 				if (room.tasks.some((_task) => task.task === _task.task)) {
-					return socket.emit("error", "You cannot request the same task more than once")
+					return socket.emit('error', 'You cannot request the same task more than once');
 				}
 			}
 
 			if (radars.includes(task.task as (typeof radars)[number])) {
 				const seeker_coords = room.players.find(
 					(player) => player.name === socket.data.name
-				)?.coords
+				)?.coords;
 
 				if (!seeker_coords)
 					return socket.emit(
-						"error",
-						"The system has not receive your gps. Please try again later."
-					)
+						'error',
+						'The system has not receive your gps. Please try again later.'
+					);
 
 				const hiders_coords = room.players
-					.filter((player) => player.role === "hider" && !player.disconnected)
+					.filter((player) => player.role === 'hider' && !player.disconnected)
 					.map((player) => player.coords)
-					.filter((coords) => coords !== undefined)
+					.filter((coords) => coords !== undefined);
 
 				if (!hiders_coords.length)
 					return socket.emit(
-						"error",
-						"The system has not receive the gps of at least one hider. Please try again later."
-					)
+						'error',
+						'The system has not receive the gps of at least one hider. Please try again later.'
+					);
 
-				let inside = 0
+				let inside = 0;
 
 				for (const hider_coords of hiders_coords) {
-					const distance = measure(hider_coords, seeker_coords)
+					const distance = measure(hider_coords, seeker_coords);
 					if (distance < radar_meters[task.task as (typeof radars)[number]]) {
-						inside += 1
+						inside += 1;
 					}
 				}
 
 				const new_task: task = {
 					task: task.task,
-					state: "confirmed",
+					state: 'confirmed',
 					result: `${inside} hiders are inside the seeker ${socket.data.name}'s ${task_names[task.task]}`
-				}
+				};
 
-				room.tasks.push(new_task)
-				room.coins += category_coins[task_categories[task.task]]
+				room.tasks.push(new_task);
+				room.coins += category_coins[task_categories[task.task]];
 
-				io.to(room.id).emit("task", new_task, true)
-				io.to(room.id).emit("coins", room.coins)
+				io.to(room.id).emit('task', new_task, true);
+				io.to(room.id).emit('coins', room.coins);
 			} else {
-				io.to(room.id).emit("task", task)
+				io.to(room.id).emit('task', task);
 
-				if (task.state !== "requested") room.tasks.pop()
-				room.tasks.push(task)
+				if (task.state !== 'requested') room.tasks.pop();
+				room.tasks.push(task);
 
-				if (task.state === "confirmed") {
-					room.coins += category_coins[task_categories[task.task]]
-					io.to(room.id).emit("coins", room.coins)
+				if (task.state === 'confirmed') {
+					room.coins += category_coins[task_categories[task.task]];
+					io.to(room.id).emit('coins', room.coins);
 				}
 			}
-		})
+		});
 
-		socket.on("dice", (number_of_dices_str) => {
-			if (!room) return
+		socket.on('dice', (number_of_dices_str) => {
+			if (!room) return;
 
-			const number_of_dices = Number.parseInt(number_of_dices_str)
+			const number_of_dices = Number.parseInt(number_of_dices_str);
 			if (Number.isNaN(number_of_dices) || number_of_dices <= 0)
-				return socket.emit("error", "Invalid number of dices")
+				return socket.emit('error', 'Invalid number of dices');
 
 			if (number_of_dices * dice_coins > room.coins) {
 				return socket.emit(
-					"error",
+					'error',
 					`You do not have enough coins to roll that many dices (1 dice cost 50 coins). The maximum dices you can roll is ${Math.floor(room.coins / dice_coins)}`
-				)
+				);
 			}
 
-			if (room.tasks.some((task) => task.state !== "confirmed")) {
+			if (room.tasks.some((task) => task.state !== 'confirmed')) {
 				return socket.emit(
-					"error",
-					"You need to complete all your tasks first before you can send curses"
-				)
+					'error',
+					'You need to complete all your tasks first before you can send curses'
+				);
 			}
 
-			if (room.curses.some((curse) => curse.state !== "confirmed")) {
-				return socket.emit("error", "You can only send one curse at a time")
+			if (room.curses.some((curse) => curse.state !== 'confirmed')) {
+				return socket.emit('error', 'You can only send one curse at a time');
 			}
 
-			const dices: number[] = []
-			let raw = 0
+			const dices: number[] = [];
+			let raw = 0;
 			for (let i = 0; i < number_of_dices; i++) {
-				const dice = Math.floor(Math.random() * 6) + 1
-				dices.push(dice)
-				raw += dice
+				const dice = Math.floor(Math.random() * 6) + 1;
+				dices.push(dice);
+				raw += dice;
 			}
-			const curse = raw > 24 ? 24 : (raw as keyof typeof dice_curses)
+			const curse = raw > 24 ? 24 : (raw as keyof typeof dice_curses);
 
-			const new_curse: curse = { dices, curse, state: "requested" }
+			const new_curse: curse = { dices, curse, state: 'requested' };
 
-			io.to(room.id).emit("curse", new_curse)
-			room.coins -= number_of_dices * dice_coins
-			io.to(room.id).emit("coins", room.coins)
-			room.curses.push(new_curse)
-		})
+			io.to(room.id).emit('curse', new_curse);
+			room.coins -= number_of_dices * dice_coins;
+			io.to(room.id).emit('coins', room.coins);
+			room.curses.push(new_curse);
+		});
 
-		socket.on("curse", (curse) => {
-			if (!room) return
-			io.to(room.id).emit("curse", curse)
-			if (curse.state !== "requested") room.curses.pop()
-			room.curses.push(curse)
-		})
+		socket.on('curse', (curse) => {
+			if (!room) return;
+			io.to(room.id).emit('curse', curse);
+			if (curse.state !== 'requested') room.curses.pop();
+			room.curses.push(curse);
+		});
 
-		socket.on("coins", (coins) => {
-			if (!room) return
-			room.coins = coins
-			io.to(room.id).emit("coins", coins)
-		})
+		socket.on('coins', (coins) => {
+			if (!room) return;
+			room.coins = coins;
+			io.to(room.id).emit('coins', coins);
+		});
 
-		socket.on("game", (state) => {
-			if (!room) return
+		socket.on('game', (state) => {
+			if (!room) return;
 
-			io.to(room.id).emit("game", state, room.game)
+			io.to(room.id).emit('game', state, room.game);
 
 			switch (state) {
-				case "ingame":
-					if (room.ended_at && room.started_at && room.game === "paused") {
-						room.started_at = Date.now() - (room.ended_at - room.started_at)
+				case 'ingame':
+					if (room.ended_at && room.started_at && room.game === 'paused') {
+						room.started_at = Date.now() - (room.ended_at - room.started_at);
 					} else {
-						room.started_at = Date.now()
-						for (const task of room.tasks) task.old = true
-						for (const curse of room.curses) curse.old = true
+						room.started_at = Date.now();
+						for (const task of room.tasks) task.old = true;
+						for (const curse of room.curses) curse.old = true;
 					}
-					room.ended_at = undefined
-					io.to(room.id).emit("started", room.started_at)
+					room.ended_at = undefined;
+					io.to(room.id).emit('started', room.started_at);
 					for (const player of room.players) {
-						if (player.coords) player.start_coords = player.coords
+						if (player.coords) player.start_coords = player.coords;
 					}
-					break
-				case "ended":
-				case "paused":
-					room.ended_at = Date.now()
-					io.to(room.id).emit("ended", room.ended_at)
-					break
+					break;
+				case 'ended':
+				case 'paused':
+					room.ended_at = Date.now();
+					io.to(room.id).emit('ended', room.ended_at);
+					break;
 			}
 
-			room.game = state
-		})
+			room.game = state;
+		});
 
-		socket.on("players", (players) => {
-			if (!room) return
-			room.players = players
+		socket.on('players', (players) => {
+			if (!room) return;
+			room.players = players;
 			for (const player of room.players) {
-				if (player.banned) sockets[room.id][player.name]?.emit("banned")
+				if (player.banned) sockets[room.id][player.name]?.emit('banned');
 			}
-			io.to(room.id).emit("players", room.players)
-		})
+			io.to(room.id).emit('players', room.players);
+		});
 
-		socket.on("found", () => {
-			if (!room) return
-			const candidate_player = room.players.find((player) => player.name === socket.data.name)
-			if (!candidate_player) return
+		socket.on('found', () => {
+			if (!room) return;
+			const candidate_player = room.players.find((player) => player.name === socket.data.name);
+			if (!candidate_player) return;
 
 			switch (candidate_player.role) {
-				case "seeker":
-					if (room.found === "hider") room.found = "both"
-					else room.found = "seeker"
-					break
-				case "hider":
-					if (room.found === "seeker") room.found = "both"
-					else room.found = "hider"
-					break
+				case 'seeker':
+					if (room.found === 'hider') room.found = 'both';
+					else room.found = 'seeker';
+					break;
+				case 'hider':
+					if (room.found === 'seeker') room.found = 'both';
+					else room.found = 'hider';
+					break;
 			}
 
-			if (room.found === "both") {
-				room.game = "ended"
-				io.to(room.id).emit("game", "ended")
-				room.ended_at = Date.now()
-				io.to(room.id).emit("ended", room.ended_at)
+			if (room.found === 'both') {
+				room.game = 'ended';
+				io.to(room.id).emit('game', 'ended');
+				room.ended_at = Date.now();
+				io.to(room.id).emit('ended', room.ended_at);
 			}
 
-			io.to(room.id).emit("found", room.found)
-		})
+			io.to(room.id).emit('found', room.found);
+		});
 
-		socket.on("disconnecting", () => {
-			if (!room) return
+		socket.on('disconnecting', () => {
+			if (!room) return;
 
-			connected_clients[Number.parseInt(room.id)] -= 1
-			if (connected_clients[Number.parseInt(room.id)] > 0) return
-			room_ids.push(room.id)
-			const index = rooms.findIndex(({ id }) => id === room?.id)
-			if (index === -1) return
-			rooms.splice(index, 1)
+			connected_clients[Number.parseInt(room.id)] -= 1;
+			if (connected_clients[Number.parseInt(room.id)] > 0) return;
+			room_ids.push(room.id);
+			const index = rooms.findIndex(({ id }) => id === room?.id);
+			if (index === -1) return;
+			rooms.splice(index, 1);
 
-			const candidate_player = room.players.find((player) => player.name === socket.data.name)
-			if (!candidate_player) return
-			candidate_player.disconnected = true
+			const candidate_player = room.players.find((player) => player.name === socket.data.name);
+			if (!candidate_player) return;
+			candidate_player.disconnected = true;
 
-			io.to(room.id).emit("players", room.players)
-		})
-	})
+			io.to(room.id).emit('players', room.players);
+		});
+	});
 }
 
 function random<T>(arr: T[]): T {
-	return arr[Math.floor(arr.length * Math.random())]
+	return arr[Math.floor(arr.length * Math.random())];
 }
 
 const sockets: Record<
 	string,
 	Record<string, Socket<client_server, server_client, Record<string, never>, data>>
-> = {}
+> = {};
 
 /**
  * * Generally used geo measurement function
@@ -343,16 +343,16 @@ export function measure(
 	{ latitude: lat1, longitude: lon1 }: { latitude: number; longitude: number },
 	{ latitude: lat2, longitude: lon2 }: { latitude: number; longitude: number }
 ) {
-	const R = 6378.137 // Radius of earth in KM
-	const dLat = (lat2 * Math.PI) / 180 - (lat1 * Math.PI) / 180
-	const dLon = (lon2 * Math.PI) / 180 - (lon1 * Math.PI) / 180
+	const R = 6378.137; // Radius of earth in KM
+	const dLat = (lat2 * Math.PI) / 180 - (lat1 * Math.PI) / 180;
+	const dLon = (lon2 * Math.PI) / 180 - (lon1 * Math.PI) / 180;
 	const a =
 		Math.sin(dLat / 2) * Math.sin(dLat / 2) +
 		Math.cos((lat1 * Math.PI) / 180) *
 			Math.cos((lat2 * Math.PI) / 180) *
 			Math.sin(dLon / 2) *
-			Math.sin(dLon / 2)
-	const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
-	const d = R * c
-	return d * 1000 // meters
+			Math.sin(dLon / 2);
+	const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+	const d = R * c;
+	return d * 1000; // meters
 }
