@@ -1,13 +1,13 @@
 <script lang="ts">
 	import { pushState } from '$app/navigation';
-	import { page } from '$app/stores';
+	import { page } from '$app/state';
 	import {
-		black_icon,
-		blue_icon,
-		red_icon,
+		black_icon_options,
+		blue_icon_options,
+		red_icon_options,
 		socket,
-		violet_icon,
-		yellow_icon
+		violet_icon_options,
+		yellow_icon_options
 	} from '$lib/client/const';
 	import {
 		curse_descriptions,
@@ -19,6 +19,7 @@
 		task_names
 	} from '$lib/const';
 	import type { curse, found_state, game_state, player, task } from '$lib/types';
+	import { icon, type Icon } from 'leaflet';
 	import { Circle, LayerGroup, Marker, Popup, Map as SveafletMap, TileLayer } from 'sveaflet';
 	import { untrack } from 'svelte';
 
@@ -77,6 +78,12 @@
 	let join_name = $state('');
 	let join_admin = $state(false);
 	let join_password = $state('');
+
+	let violet_icon = $state<Icon>();
+	let red_icon = $state<Icon>();
+	let blue_icon = $state<Icon>();
+	let yellow_icon = $state<Icon>();
+	let black_icon = $state<Icon>();
 
 	// * SOCKET
 
@@ -209,6 +216,12 @@
 				},
 				{ enableHighAccuracy: true, maximumAge: 0, timeout: 10000 }
 			);
+
+			violet_icon = icon(violet_icon_options);
+			red_icon = icon(red_icon_options);
+			blue_icon = icon(blue_icon_options);
+			yellow_icon = icon(yellow_icon_options);
+			black_icon = icon(black_icon_options);
 		});
 	});
 
@@ -247,7 +260,7 @@
 </script>
 
 <div class="m-4 flex flex-col items-center justify-center gap-4">
-	{#if !$page.state.page}
+	{#if !page.state.page}
 		<div class="grid grid-cols-2 items-center gap-4">
 			<div class="col-span-2 text-center text-xl">Create a new room</div>
 			<div class="text-right">Your Name</div>
@@ -316,7 +329,7 @@
 		</div>
 
 		<!-- * ROOM -->
-	{:else if $page.state.page === 'room'}
+	{:else if page.state.page === 'room'}
 		{@render top()}
 
 		<div class="text-xl">Waiting for admin to assign roles...</div>
@@ -333,7 +346,7 @@
 		</div>
 
 		<!-- * ADMIN -->
-	{:else if $page.state.page === 'admin'}
+	{:else if page.state.page === 'admin'}
 		{@const hider_coords = players
 			.filter((player) => player.role === 'hider' && !player.disconnected)
 			.map((player) => player.coords)
@@ -418,7 +431,7 @@
 		{@render bottom('admin')}
 
 		<!-- * SEEKER -->
-	{:else if $page.state.page === 'seeker'}
+	{:else if page.state.page === 'seeker'}
 		{@render top()}
 
 		<div class="text-3xl">Seeker</div>
@@ -456,7 +469,7 @@
 		{@render bottom('seeker')}
 
 		<!-- * HIDER -->
-	{:else if $page.state.page === 'hider'}
+	{:else if page.state.page === 'hider'}
 		{@render top()}
 
 		<div class="text-3xl">Hider</div>

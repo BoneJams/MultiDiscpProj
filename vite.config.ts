@@ -5,8 +5,8 @@ import server from './src/lib/server';
 
 export default defineConfig({
 	plugins: [
-		sveltekit(),
 		tailwindcss(),
+		sveltekit(),
 		{
 			name: 'server',
 			configureServer({ httpServer }) {
