@@ -5,7 +5,6 @@
 		black_icon_options,
 		blue_icon_options,
 		red_icon_options,
-		socket,
 		violet_icon_options,
 		yellow_icon_options
 	} from '$lib/client/const';
@@ -18,14 +17,23 @@
 		task_descriptions,
 		task_names
 	} from '$lib/const';
-	import type { curse, found_state, game_state, player, task } from '$lib/types';
+	import {
+		client_server,
+		server_client,
+		type curse,
+		type found_state,
+		type game_state,
+		type player,
+		type task
+	} from '$lib/types';
 	import { icon, type Icon } from 'leaflet';
+	import { pack, unpack } from 'msgpackr';
 	import { Circle, LayerGroup, Marker, Popup, Map as SveafletMap, TileLayer } from 'sveaflet';
 	import { untrack } from 'svelte';
+	import type { z } from 'zod';
 
 	// * STATES
 
-	// biome-ignore lint/style/useConst: false positive
 	let number_of_dices_str = $state('');
 
 	let started_at = $state<number>();
@@ -85,102 +93,7 @@
 	let yellow_icon = $state<Icon>();
 	let black_icon = $state<Icon>();
 
-	// * SOCKET
-
-	socket.on('create', (id) => {
-		socket.emit('join', id, create_name, create_admin_password, true);
-	});
-
-	socket.on('join', (id) => {
-		room_id = id;
-		pushState('', { page: 'room' });
-	});
-
-	socket.on('error', (error) => {
-		alert(error);
-	});
-
-	socket.on('players', (_players) => {
-		players = _players;
-		if (join_id && join_name) {
-			const player = players.find((player) => player.name === join_name);
-			if (!player) return;
-
-			switch (player.role) {
-				case 'admin':
-					pushState('', { page: 'admin' });
-					break;
-				case 'seeker':
-					pushState('', { page: 'seeker' });
-					break;
-				case 'hider':
-					pushState('', { page: 'hider' });
-					break;
-			}
-		}
-
-		if (room_id && create_name) {
-			const player = players.find((player) => player.name === create_name);
-			if (!player) return;
-
-			switch (player.role) {
-				case 'admin':
-					pushState('', { page: 'admin' });
-					break;
-				case 'seeker':
-					pushState('', { page: 'seeker' });
-					break;
-				case 'hider':
-					pushState('', { page: 'hider' });
-					break;
-			}
-		}
-	});
-
-	socket.on('coins', (new_coins) => {
-		coins = new_coins;
-	});
-
-	socket.on('task', (task, new_task) => {
-		if (task.state !== 'requested' && !new_task) tasks.pop();
-		tasks.push(task);
-	});
-
-	socket.on('curse', (curse, new_curse) => {
-		if (curse.state !== 'requested' && !new_curse) curses.pop();
-		curses.push(curse);
-	});
-
-	socket.on('game', (state, previous) => {
-		if (previous !== 'paused' && state === 'ingame') {
-			for (const task of tasks) task.old = true;
-			for (const curse of curses) curse.old = true;
-		}
-		game = state;
-	});
-
-	socket.on('banned', () => {
-		alert('You have been banned from this room');
-		setTimeout(() => {
-			sessionStorage.clear();
-			location.reload();
-		}, 3000);
-	});
-
-	socket.on('found', (state) => {
-		found = state;
-	});
-
-	socket.on('started', (ms) => {
-		ended_at = undefined;
-		started_at = ms;
-		update_time();
-	});
-
-	socket.on('ended', (ms) => {
-		ended_at = ms;
-		time = ended_at - (started_at ?? 0);
-	});
+	let ws: WebSocket;
 
 	// * $EFFECTS
 
@@ -197,16 +110,29 @@
 			join_admin = sessionStorage.getItem('join_admin') === 'true';
 			join_password = sessionStorage.getItem('join_password') ?? '';
 
-			if (join_id && join_name) socket.emit('join', join_id, join_name, join_password, join_admin);
+			if (join_id && join_name)
+				send({
+					ev: 'join',
+					room_id: join_id,
+					player_name: join_name,
+					password: join_password,
+					admin: join_admin
+				});
 
 			if (room_id && create_name)
-				socket.emit('join', room_id, create_name, create_admin_password, true);
+				send({
+					ev: 'join',
+					room_id: room_id,
+					player_name: create_name,
+					password: create_admin_password,
+					admin: true
+				});
 
 			navigator.geolocation.watchPosition(
 				(position) => {
 					if (!self_coords) map_center = position.coords;
 					self_coords = position.coords;
-					socket.emit('gps', position.coords);
+					send({ ev: 'gps', coords: position.coords });
 				},
 				(e) => {
 					console.log(e);
@@ -222,6 +148,118 @@
 			blue_icon = icon(blue_icon_options);
 			yellow_icon = icon(yellow_icon_options);
 			black_icon = icon(black_icon_options);
+
+			ws = new WebSocket(`ws://${location.host}/ws`);
+
+			ws.addEventListener('message', (ev) => {
+				try {
+					const data = server_client.parse(unpack(ev.data));
+
+					switch (data.ev) {
+						case 'create': {
+							send({
+								ev: 'join',
+								room_id: data.room_id,
+								player_name: create_name,
+								password: create_admin_password,
+								admin: true
+							});
+							break;
+						}
+						case 'join': {
+							room_id = data.room_id;
+							pushState('', { page: 'room' });
+							break;
+						}
+						case 'error': {
+							alert(data.error);
+							break;
+						}
+						case 'players': {
+							players = data.players;
+
+							let player: player | undefined;
+
+							if (join_id && join_name)
+								player = players.find((player) => player.name === join_name);
+
+							if (room_id && create_name)
+								player = players.find((player) => player.name === create_name);
+
+							if (!player) break;
+
+							switch (player.role) {
+								case 'admin':
+									pushState('', { page: 'admin' });
+									break;
+								case 'seeker':
+									pushState('', { page: 'seeker' });
+									break;
+								case 'hider':
+									pushState('', { page: 'hider' });
+									break;
+							}
+
+							break;
+						}
+						case 'coins': {
+							coins = data.coins;
+							break;
+						}
+						case 'task': {
+							if (data.task.state !== 'requested' && !data.new_task) tasks.pop();
+							tasks.push(data.task);
+							break;
+						}
+						case 'curse': {
+							if (data.curse.state !== 'requested' && !data.new_curse) curses.pop();
+							curses.push(data.curse);
+							break;
+						}
+						case 'game': {
+							if (data.previous !== 'paused' && data.state === 'ingame') {
+								for (const task of tasks) task.old = true;
+								for (const curse of curses) curse.old = true;
+							}
+							game = data.state;
+							break;
+						}
+						case 'banned': {
+							alert('You have been banned from this room');
+							setTimeout(() => {
+								sessionStorage.clear();
+								location.reload();
+							}, 3000);
+							break;
+						}
+						case 'found': {
+							found = data.found;
+							break;
+						}
+						case 'started': {
+							ended_at = undefined;
+							started_at = data.started_at;
+							update_time();
+							break;
+						}
+						case 'ended': {
+							ended_at = data.ended_at;
+							time = ended_at - (started_at ?? 0);
+							break;
+						}
+						case 'gps': {
+							const player = players.find((player) => player.name === data.name);
+							if (!player) break;
+
+							player.coords = data.coords;
+
+							break;
+						}
+					}
+				} catch (e) {
+					console.log(e);
+				}
+			});
 		});
 	});
 
@@ -243,19 +281,34 @@
 	function create(ev: KeyboardEvent | MouseEvent) {
 		if (ev instanceof KeyboardEvent && ev.key !== 'Enter') return;
 		if (!create_name) return alert('Please enter a name');
-		socket.emit('create', create_name, create_room_password, create_admin_password);
+		send({
+			ev: 'create',
+			player_name: create_name,
+			room_password: create_room_password,
+			admin_password: create_admin_password
+		});
 	}
 
 	function join(ev: KeyboardEvent | MouseEvent) {
 		if (ev instanceof KeyboardEvent && ev.key !== 'Enter') return;
 		if (!join_id || !join_name) return alert('Please enter a room ID and a name');
-		socket.emit('join', join_id, join_name, join_password, join_admin);
+		send({
+			ev: 'join',
+			room_id: join_id,
+			player_name: join_name,
+			password: join_password,
+			admin: join_admin
+		});
 	}
 
 	function update_time() {
 		if (game !== 'ingame') return;
 		requestAnimationFrame(update_time);
 		time = (ended_at ?? Date.now()) - (started_at ?? Date.now());
+	}
+
+	function send(data: z.infer<typeof client_server>) {
+		ws.send(pack(data));
 	}
 </script>
 
@@ -322,7 +375,13 @@
 					onkeydown={join}
 					onclick={() => {
 						if (!join_id) return;
-						socket.emit('join', join_id, join_name, join_password, join_admin);
+						send({
+							ev: 'join',
+							room_id: join_id,
+							player_name: join_name,
+							password: join_password,
+							admin: join_admin
+						});
 					}}>Join</button
 				>
 			</div>
@@ -369,7 +428,7 @@
 			disabled={!hider_coords.length || !seeker_coords.length}
 			class="select select-primary select-sm"
 			bind:value={game}
-			onchange={() => socket.emit('game', game)}
+			onchange={() => send({ ev: 'game', state: game })}
 		>
 			<option value="waiting">Not In Game (Not Started Yet)</option>
 			<option value="ingame">In Game (Started)</option>
@@ -390,7 +449,7 @@
 					disabled={player.name === join_name || player.name === create_name || player.banned}
 					class="select select-primary select-sm"
 					bind:value={player.role}
-					onchange={() => socket.emit('players', players)}
+					onchange={() => send({ ev: 'players', players })}
 				>
 					<option value="none">Select Role...</option>
 					<option value="admin">Admin</option>
@@ -401,7 +460,7 @@
 					disabled={player.name === join_name || player.name === create_name}
 					class="select select-sm select-primary"
 					bind:value={player.banned}
-					onchange={() => socket.emit('players', players)}
+					onchange={() => send({ ev: 'players', players })}
 				>
 					<option value={false}>Not banned</option>
 					<option value={true}>Banned</option>
@@ -420,10 +479,10 @@
 				type="number"
 				bind:value={coins}
 				onkeydown={(ev) => {
-					if (ev.key === 'Enter') socket.emit('coins', coins);
+					if (ev.key === 'Enter') send({ ev: 'coins', coins });
 				}}
 			/>
-			<button class="btn btn-error btn-sm" onclick={() => socket.emit('coins', coins)}
+			<button class="btn btn-error btn-sm" onclick={() => send({ ev: 'coins', coins })}
 				>Override coins</button
 			>
 		</div>
@@ -443,7 +502,7 @@
 					disabled={game !== 'ingame'}
 					class="btn btn-primary"
 					onclick={() => {
-						socket.emit('task', { task: radar, state: 'requested' });
+						send({ ev: 'task', task: { task: radar, state: 'requested' } });
 					}}>{task_names[radar]}</button
 				>
 			{/each}
@@ -456,9 +515,9 @@
 						disabled={game !== 'ingame'}
 						class="btn btn-primary"
 						onclick={() => {
-							socket.emit('task', {
-								task: task as keyof typeof task_categories,
-								state: 'requested'
+							send({
+								ev: 'task',
+								task: { task: task as keyof typeof task_categories, state: 'requested' }
 							});
 						}}>{task_names[task as keyof typeof task_categories]}</button
 					>
@@ -483,14 +542,14 @@
 				bind:value={number_of_dices_str}
 				class="input input-sm input-primary w-20"
 				onkeydown={(ev) => {
-					if (ev.key === 'Enter') socket.emit('dice', number_of_dices_str);
+					if (ev.key === 'Enter') send({ ev: 'dice', number_of_dices: number_of_dices_str });
 				}}
 			/>
 			<button
 				disabled={game !== 'ingame'}
 				class="btn btn-primary btn-sm"
 				onclick={() => {
-					socket.emit('dice', number_of_dices_str);
+					send({ ev: 'dice', number_of_dices: number_of_dices_str });
 				}}>Roll</button
 			>
 		</div>
@@ -540,7 +599,7 @@
 			disabled={game !== 'ingame'}
 			class="btn btn-error btn-sm"
 			onclick={() => {
-				socket.emit('found');
+				send({ ev: 'found' });
 			}}>Confirms that seekers have found hiders</button
 		>
 
@@ -640,7 +699,7 @@
 			<button
 				class="btn btn-sm btn-error"
 				onclick={() => {
-					socket.emit('task', { ...task, state: 'completed' });
+					send({ ev: 'task', task: { ...task, state: 'completed' } });
 				}}>Mark the task as completed</button
 			>
 		{/if}
@@ -649,7 +708,7 @@
 			<button
 				class="btn btn-sm btn-error"
 				onclick={() => {
-					socket.emit('task', { ...task, state: 'confirmed' });
+					send({ ev: 'task', task: { ...task, state: 'confirmed' } });
 				}}>Confirm the task is completed</button
 			>
 		{/if}
@@ -684,7 +743,7 @@
 			<button
 				class="btn btn-sm btn-error"
 				onclick={() => {
-					socket.emit('curse', { ...curse, state: 'completed' });
+					send({ ev: 'curse', curse: { ...curse, state: 'completed' } });
 				}}>Mark the curse as completed</button
 			>
 		{/if}
@@ -692,7 +751,7 @@
 			<button
 				class="btn btn-sm btn-error"
 				onclick={() => {
-					socket.emit('curse', { ...curse, state: 'confirmed' });
+					send({ ev: 'curse', curse: { ...curse, state: 'confirmed' } });
 				}}>Confirm the curse is completed</button
 			>
 		{/if}

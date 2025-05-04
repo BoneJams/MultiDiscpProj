@@ -1,7 +1,7 @@
 {
 	"name": "laghs",
 	"private": true,
-	"version": "2025.04.29.0",
+	"version": "2025.05.04.0",
 	"type": "module",
 	"scripts": {
 		"dev": "vite dev",
@@ -16,8 +16,8 @@
 	"devDependencies": {
 		"@eslint/compat": "^1.2.8",
 		"@eslint/js": "^9.25.1",
-		"@sveltejs/adapter-node": "^5.2.12",
-		"@sveltejs/kit": "^2.20.7",
+		"@sveltejs/adapter-node": "https://pkg.pr.new/sveltejs/kit/@sveltejs/adapter-node@12973",
+		"@sveltejs/kit": "https://pkg.pr.new/sveltejs/kit/@sveltejs/kit@12973",
 		"@sveltejs/vite-plugin-svelte": "5.0.3",
 		"@tailwindcss/vite": "^4.1.4",
 		"@total-typescript/ts-reset": "^0.6.1",
@@ -28,11 +28,10 @@
 		"eslint-plugin-svelte": "^3.5.1",
 		"globals": "^16.0.0",
 		"leaflet": "^1.9.4",
+		"msgpackr": "^1.11.2",
 		"prettier": "^3.5.3",
 		"prettier-plugin-svelte": "^3.3.3",
 		"prettier-plugin-tailwindcss": "^0.6.11",
-		"socket.io": "^4.8.1",
-		"socket.io-client": "^4.8.1",
 		"sveaflet": "^0.1.4",
 		"svelte": "5.28.2",
 		"svelte-check": "^4.1.6",
@@ -40,11 +39,13 @@
 		"tslib": "^2.8.1",
 		"typescript": "^5.8.3",
 		"typescript-eslint": "^8.31.1",
-		"vite": "^6.3.3"
+		"vite": "^6.3.3",
+		"zod": "^3.24.3"
 	},
 	"pnpm": {
 		"onlyBuiltDependencies": [
-			"esbuild"
+			"esbuild",
+			"msgpackr-extract"
 		]
 	},
 	"packageManager": "pnpm@10.10.0+sha512.d615db246fe70f25dcfea6d8d73dee782ce23e2245e3c4f6f888249fb568149318637dca73c2c5c8ef2a4ca0d5657fb9567188bfab47f566d1ee6ce987815c39"

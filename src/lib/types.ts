@@ -1,76 +1,108 @@
-import type { dice_curses, task_categories } from './const';
+import { z } from 'zod';
+import { dice_curses, task_categories } from './const';
 
-export interface client_server {
-	create(player_name: string, room_password: string, admin_password: string): void;
-	join(room_id: string, player_name: string, password: string, admin: boolean): void;
+const coords_schema = z.object({
+	latitude: z.number(),
+	longitude: z.number(),
+	accuracy: z.number()
+});
 
-	players(players: player[]): void;
-	coins(coins: number): void;
+const player_schema = z.object({
+	name: z.string(),
+	role: z.enum(['none', 'admin', 'seeker', 'hider']),
+	banned: z.boolean(),
+	disconnected: z.boolean(),
+	coords: coords_schema.optional(),
+	start_coords: coords_schema.optional()
+});
 
-	task(task: task): void;
+export type player = z.infer<typeof player_schema>;
 
-	dice(number_of_dices: string): void;
+const task_schema = z.object({
+	task: z.enum(
+		Object.keys(task_categories) as [
+			keyof typeof task_categories,
+			...(keyof typeof task_categories)[]
+		]
+	),
+	state: z.enum(['requested', 'completed', 'confirmed']),
+	result: z.string().optional(),
+	old: z.boolean().optional()
+});
 
-	curse(curse: curse): void;
+export type task = z.infer<typeof task_schema>;
 
-	game(state: game_state): void;
-	found(): void;
+const curse_schema = z.object({
+	dices: z.array(z.number()),
+	curse: z.enum(
+		Object.keys(dice_curses) as [keyof typeof dice_curses, ...(keyof typeof dice_curses)[]]
+	),
+	state: z.enum(['requested', 'completed', 'confirmed']),
+	old: z.boolean().optional()
+});
 
-	gps(coords: GeolocationCoordinates): void;
-}
+export type curse = z.infer<typeof curse_schema>;
 
-export interface server_client {
-	create(room_id: string): void;
-	join(room_id: string): void;
+const game_state_schema = z.enum(['waiting', 'ingame', 'paused', 'ended', 'aborted']);
 
-	players(players: player[]): void;
-	coins(coins: number): void;
+export type game_state = z.infer<typeof game_state_schema>;
 
-	task(task: task, new_task?: true): void;
-	curse(curse: curse, new_curse?: true): void;
+const found_state_schema = z.enum(['none', 'hider', 'seeker', 'both']);
 
-	game(state: game_state, previous?: game_state): void;
+export type found_state = z.infer<typeof found_state_schema>;
 
-	banned(): void;
+export const client_server = z.discriminatedUnion('ev', [
+	z.object({
+		ev: z.literal('create'),
+		player_name: z.string(),
+		room_password: z.string(),
+		admin_password: z.string()
+	}),
 
-	found(state: found_state): void;
+	z.object({
+		ev: z.literal('join'),
+		room_id: z.string(),
+		player_name: z.string(),
+		password: z.string(),
+		admin: z.boolean()
+	}),
 
-	started(started_at: number): void;
-	ended(ended_at: number): void;
+	z.object({ ev: z.literal('players'), players: z.array(player_schema) }),
+	z.object({ ev: z.literal('coins'), coins: z.number() }),
 
-	error(error: string): void;
-}
+	z.object({ ev: z.literal('task'), task: task_schema }),
+	z.object({ ev: z.literal('dice'), number_of_dices: z.string() }),
+	z.object({ ev: z.literal('curse'), curse: curse_schema }),
 
-export interface data {
-	name: string;
-}
+	z.object({ ev: z.literal('game'), state: game_state_schema }),
+	z.object({ ev: z.literal('found') }),
 
-export type player = {
-	name: string;
-	role: 'none' | 'admin' | 'seeker' | 'hider';
-	banned: boolean;
-	coords?: GeolocationCoordinates;
-	start_coords?: GeolocationCoordinates;
-	disconnected: boolean;
-};
+	z.object({ ev: z.literal('gps'), coords: coords_schema })
+]);
+
+export const server_client = z.discriminatedUnion('ev', [
+	z.object({ ev: z.literal('create'), room_id: z.string() }),
+	z.object({ ev: z.literal('join'), room_id: z.string() }),
+
+	z.object({ ev: z.literal('players'), players: z.array(player_schema) }),
+	z.object({ ev: z.literal('coins'), coins: z.number() }),
+
+	z.object({ ev: z.literal('task'), task: task_schema, new_task: z.boolean() }),
+	z.object({ ev: z.literal('curse'), curse: curse_schema, new_curse: z.boolean() }),
+
+	z.object({ ev: z.literal('game'), state: game_state_schema, previous: game_state_schema }),
+	z.object({ ev: z.literal('banned') }),
+	z.object({ ev: z.literal('found'), found: found_state_schema }),
+
+	z.object({ ev: z.literal('started'), started_at: z.number() }),
+	z.object({ ev: z.literal('ended'), ended_at: z.number() }),
+
+	z.object({ ev: z.literal('gps'), name: z.string(), coords: coords_schema }),
+
+	z.object({ ev: z.literal('error'), error: z.string() })
+]);
 
 export type valueof<T> = T[keyof T];
-
-export type task = {
-	task: keyof typeof task_categories;
-	state: 'requested' | 'completed' | 'confirmed';
-	result?: string;
-	old?: true;
-};
-export type curse = {
-	dices: number[];
-	curse: keyof typeof dice_curses;
-	state: 'requested' | 'completed' | 'confirmed';
-	old?: true;
-};
-
-export type game_state = 'waiting' | 'ingame' | 'paused' | 'ended' | 'aborted';
-export type found_state = 'none' | 'hider' | 'seeker' | 'both';
 
 export type Room = {
 	id: string;

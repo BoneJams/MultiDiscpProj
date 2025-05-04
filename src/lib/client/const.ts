@@ -1,8 +1,4 @@
-import type { client_server, server_client } from '$lib/types';
 import type { IconOptions } from 'leaflet';
-import { type Socket, io } from 'socket.io-client';
-
-export const socket: Socket<server_client, client_server> = io();
 
 export const violet_icon_options: IconOptions = {
 	iconUrl: '/img/marker-icon-violet.png',
