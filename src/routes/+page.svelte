@@ -149,7 +149,7 @@
 			yellow_icon = icon(yellow_icon_options);
 			black_icon = icon(black_icon_options);
 
-			ws = new WebSocket(`ws://${location.host}/ws`);
+			ws = new WebSocket(`${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/ws`);
 
 			ws.addEventListener('message', (ev) => {
 				try {
